@@ -2,11 +2,21 @@
 import { put } from "@vercel/blob";
 
 export const uploadAnalysisToBlob = async (data: object): Promise<string | null> => {
-  // Leitura robusta do token
-  const token = process.env.NEXT_PUBLIC_BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
+  // 1. Try LocalStorage Override
+  let token = '';
+  if (typeof window !== 'undefined') {
+    token = localStorage.getItem('THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN') || '';
+  }
+
+  // 2. Try Env Vars
+  if (!token) {
+    token = process.env.NEXT_PUBLIC_BLOB_READ_WRITE_TOKEN || 
+            process.env.BLOB_READ_WRITE_TOKEN ||
+            process.env.REACT_APP_BLOB_READ_WRITE_TOKEN || '';
+  }
 
   if (!token) {
-    console.warn("BLOB_READ_WRITE_TOKEN não encontrado. O upload do JSON será pulado.");
+    console.warn("⚠️ Vercel Blob Token não encontrado. O upload do JSON será pulado.");
     return null;
   }
 

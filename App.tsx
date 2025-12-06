@@ -8,24 +8,43 @@ import { Recorder } from './components/Recorder';
 import { MeetingDetails } from './components/MeetingDetails';
 import { Settings } from './components/Settings';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Meeting, AppView, MeetingAnalysis } from './types';
-import { Zap, LayoutGrid, Settings as SettingsIcon } from 'lucide-react';
+import { Meeting, AppView } from './types';
+import { Zap, LayoutGrid, Settings as SettingsIcon, CloudOff, Cloud } from 'lucide-react';
+
+const LOCAL_STORAGE_KEY = 'thor4tech_meetings_backup';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processStatus, setProcessStatus] = useState<string>('');
+  const [isOffline, setIsOffline] = useState(false);
 
-  // ID genérico para identificar o usuário neste dispositivo
   const GUEST_ID = 'user-device-v1';
 
   useEffect(() => {
-    fetchMeetings();
+    loadMeetings();
   }, []);
 
-  const fetchMeetings = async () => {
+  // --- STORAGE LOGIC ---
+  const saveToLocalStorage = (newMeetings: Meeting[]) => {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newMeetings));
+  };
+
+  const loadMeetings = async () => {
+    // 1. Load Local Backup First (Instant UI)
+    const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
+    let localMeetings: Meeting[] = [];
+    if (localData) {
+      try {
+        localMeetings = JSON.parse(localData);
+        setMeetings(localMeetings);
+      } catch (e) {
+        console.error("Error parsing local meetings", e);
+      }
+    }
+
+    // 2. Try Supabase Sync
     try {
       const { data, error } = await supabase
         .from('meetings')
@@ -33,16 +52,21 @@ const App: React.FC = () => {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      if (data) setMeetings(data as Meeting[]);
       
+      if (data) {
+        setMeetings(data as Meeting[]);
+        saveToLocalStorage(data as Meeting[]); // Update local backup with cloud truth
+        setIsOffline(false);
+      }
     } catch (e) {
-      console.warn("Modo Offline: Não foi possível sincronizar com o Supabase.", e);
-      // Aqui você poderia carregar de localStorage se quisesse persistência offline
+      console.warn("⚠️ Mode Offline Active: Could not sync with Supabase.", e);
+      setIsOffline(true);
+      // Keep using localMeetings loaded in step 1
     }
   };
 
   const handleProcessMeeting = async (audioBlob: Blob, duration: number) => {
-    // 1. CRIAÇÃO IMEDIATA DO REGISTRO (Proteção contra crash)
+    // 1. DRAFT CREATION (Immediate UI Update)
     const draftId = crypto.randomUUID();
     const draftMeeting: Meeting = {
       id: draftId,
@@ -54,32 +78,38 @@ const App: React.FC = () => {
       analysis_json: undefined
     };
 
-    // Atualiza UI instantaneamente (Optimistic Update)
-    setMeetings(prev => [draftMeeting, ...prev]);
+    // Optimistic Update
+    const updatedMeetings = [draftMeeting, ...meetings];
+    setMeetings(updatedMeetings);
+    saveToLocalStorage(updatedMeetings); // Backup immediately
+    
     setIsProcessing(true);
-    setCurrentView(AppView.DASHBOARD); // Envia usuário para Dashboard para ver o progresso
+    setCurrentView(AppView.DASHBOARD);
 
     try {
-      // 2. SALVAR RASCUNHO NO DB (Se falhar a IA, o registro existe)
-      await supabase.from('meetings').insert([draftMeeting]);
+      // 2. ATTEMPT CLOUD SAVE (Non-blocking)
+      supabase.from('meetings').insert([draftMeeting]).then(({ error }) => {
+        if (error) console.warn("Cloud save failed, relying on local storage.");
+      });
 
-      // 3. TRANSCRIÇÃO (Modelo Flash - Rápido)
-      console.log("Iniciando transcrição...");
+      // 3. TRANSCRIPTION (Flash)
       const transcription = await transcribeAudio(audioBlob);
       
-      // Atualiza estado local parcial
+      // Update local state partially
       draftMeeting.transcription_text = transcription;
-      draftMeeting.title = "Analisando conteúdo...";
-      setMeetings(prev => prev.map(m => m.id === draftId ? { ...draftMeeting } : m));
+      draftMeeting.title = "Analisando inteligência...";
+      
+      const meetingsWithTrans = meetings.map(m => m.id === draftId ? { ...draftMeeting } : m);
+      setMeetings(meetingsWithTrans);
+      saveToLocalStorage(meetingsWithTrans);
 
-      // 4. INTELIGÊNCIA (Modelo Pro - Smart)
-      console.log("Gerando plano de ação...");
+      // 4. INTELLIGENCE (Pro)
       const analysis = await generateActionPlan(transcription);
       
-      // 5. UPLOAD DE BACKUP (Blob) - Não bloqueante
-      uploadAnalysisToBlob(analysis).catch(err => console.warn("Blob falhou, mas seguimos:", err));
+      // 5. BLOB BACKUP
+      uploadAnalysisToBlob(analysis).catch(console.warn);
 
-      // 6. FINALIZAÇÃO
+      // 6. FINALIZE
       const finalMeeting: Meeting = {
         ...draftMeeting,
         title: analysis.title_sugestion || "Reunião Finalizada",
@@ -88,8 +118,13 @@ const App: React.FC = () => {
         analysis_json: analysis
       };
 
-      // 7. ATUALIZAÇÃO FINAL NO DB
-      const { error } = await supabase
+      // Update State & Local Storage
+      const finalMeetings = meetings.map(m => m.id === draftId ? finalMeeting : m);
+      setMeetings(finalMeetings);
+      saveToLocalStorage(finalMeetings);
+
+      // Update Supabase
+      await supabase
         .from('meetings')
         .update({
             title: finalMeeting.title,
@@ -99,53 +134,54 @@ const App: React.FC = () => {
         })
         .eq('id', draftId);
 
-      if (error) throw error;
-
-      // Atualiza UI Final
-      setMeetings(prev => prev.map(m => m.id === draftId ? finalMeeting : m));
-
     } catch (error: any) {
-      console.error("ERRO CRÍTICO NO PROCESSO:", error);
+      console.error("PROCESSING ERROR:", error);
       
-      // Marca como falha na UI e no Banco, mas não perde o registro
+      // Handle Failure Gracefully
       const failedMeeting: Meeting = {
         ...draftMeeting,
         status: 'failed',
-        title: "Erro no Processamento (Tente Novamente)",
-        transcription_text: "Ocorreu um erro durante a análise da IA. " + (error.message || "")
+        title: "Erro no Processamento (Backup Salvo)",
+        transcription_text: "Erro: " + (error.message || "Falha desconhecida")
       };
 
-      setMeetings(prev => prev.map(m => m.id === draftId ? failedMeeting : m));
+      const failedMeetingsList = meetings.map(m => m.id === draftId ? failedMeeting : m);
+      setMeetings(failedMeetingsList);
+      saveToLocalStorage(failedMeetingsList);
       
-      await supabase.from('meetings').update({ 
-          status: 'failed',
-          title: "Falha na Análise" 
-      }).eq('id', draftId);
+      // Try to update DB status if possible
+      supabase.from('meetings').update({ status: 'failed' }).eq('id', draftId);
 
-      alert("Houve uma falha na inteligência da IA. O registro foi salvo como rascunho.");
+      alert(`Houve uma falha na IA: ${error.message}. O rascunho foi salvo localmente.`);
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleDeleteMeeting = async (id: string) => {
-    if(!confirm("Tem certeza que deseja apagar esta missão? A ação é irreversível.")) return;
+    if(!confirm("Tem certeza? Esta ação é irreversível.")) return;
     
-    // Atualiza UI primeiro
-    setMeetings(prev => prev.filter(m => m.id !== id));
+    // Remove locally
+    const filtered = meetings.filter(m => m.id !== id);
+    setMeetings(filtered);
+    saveToLocalStorage(filtered);
+
     if (selectedMeeting?.id === id) {
       setSelectedMeeting(null);
       setCurrentView(AppView.DASHBOARD);
     }
 
-    // Sincroniza DB
-    await supabase.from('meetings').delete().eq('id', id);
+    // Try remove from cloud
+    supabase.from('meetings').delete().eq('id', id).then(({error}) => {
+       if(error) console.warn("Could not delete from cloud (offline?)");
+    });
   };
 
   return (
     <ErrorBoundary>
       <div className="flex min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-brand-accent selection:text-white overflow-hidden">
-        {/* Sidebar Estilo Nano Banana */}
+        
+        {/* Sidebar */}
         <aside className="fixed left-0 top-0 h-full w-20 md:w-64 glass-panel border-r border-white/5 z-50 flex flex-col items-center md:items-start py-8 transition-all shadow-[5px_0_30px_rgba(0,0,0,0.5)]">
           <div className="mb-12 px-0 md:px-8 flex items-center gap-3 group cursor-default">
             <div className="p-2 bg-brand-accent/10 rounded-lg group-hover:bg-brand-accent/20 transition-colors neon-border">
@@ -163,7 +199,6 @@ const App: React.FC = () => {
                 icon={<LayoutGrid size={22} />}
                 label="Painel Tático"
             />
-            
             <NavButton 
                 active={currentView === AppView.RECORDER} 
                 onClick={() => setCurrentView(AppView.RECORDER)}
@@ -171,7 +206,6 @@ const App: React.FC = () => {
                 label="Nova Missão"
                 isAction
             />
-
             <NavButton 
                 active={currentView === AppView.SETTINGS} 
                 onClick={() => setCurrentView(AppView.SETTINGS)}
@@ -181,34 +215,37 @@ const App: React.FC = () => {
           </nav>
 
           <div className="w-full px-6 pb-4 hidden md:block">
-              <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 to-black border border-white/5">
-                  <p className="text-xs text-slate-500 mb-2">Status do Sistema</p>
+              <div className={`p-4 rounded-xl border border-white/5 ${isOffline ? 'bg-red-900/10' : 'bg-gradient-to-br from-slate-900 to-black'}`}>
+                  <p className="text-xs text-slate-500 mb-2">Status do Banco de Dados</p>
                   <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                      <span className="text-xs font-mono text-emerald-400">ONLINE</span>
+                      <div className={`w-2 h-2 rounded-full animate-pulse ${isOffline ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
+                      <span className={`text-xs font-mono ${isOffline ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {isOffline ? 'OFFLINE (Local)' : 'ONLINE (Cloud)'}
+                      </span>
                   </div>
               </div>
           </div>
         </aside>
 
-        {/* Main Content Area */}
+        {/* Main Content */}
         <main className="flex-1 ml-20 md:ml-64 p-4 md:p-8 relative min-h-screen overflow-y-auto scrollbar-hide">
-          {/* Ambient Background Effects */}
           <div className="fixed top-[-20%] right-[-10%] w-[600px] h-[600px] bg-cyan-600/5 rounded-full blur-[120px] pointer-events-none"></div>
-          <div className="fixed bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[100px] pointer-events-none"></div>
-
+          
           <div className="relative z-10 max-w-7xl mx-auto pt-4 pb-20">
+            {isOffline && (
+              <div className="mb-6 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-center gap-2 text-yellow-200 text-sm">
+                 <CloudOff size={16} />
+                 <span>Modo Offline Ativo: As gravações estão sendo salvas apenas neste dispositivo. Verifique as chaves do Supabase.</span>
+              </div>
+            )}
+
             {currentView === AppView.DASHBOARD && (
               <Dashboard 
                 meetings={meetings} 
                 onSelectMeeting={(m) => { 
-                   if (m.status === 'completed') {
+                   if (m.status === 'completed' || m.status === 'failed') {
                       setSelectedMeeting(m); 
                       setCurrentView(AppView.DETAILS); 
-                   } else if (m.status === 'failed') {
-                      alert("Esta reunião falhou no processamento. Tente apagar e gravar novamente.");
-                   } else {
-                     // Não faz nada se estiver processando, o card já mostra o loader
                    }
                 }}
                 onDeleteMeeting={handleDeleteMeeting}
@@ -229,9 +266,7 @@ const App: React.FC = () => {
               />
             )}
 
-            {currentView === AppView.SETTINGS && (
-              <Settings />
-            )}
+            {currentView === AppView.SETTINGS && <Settings />}
           </div>
         </main>
       </div>
@@ -239,7 +274,6 @@ const App: React.FC = () => {
   );
 };
 
-// Componente auxiliar para Botões do Menu
 const NavButton: React.FC<{active: boolean, onClick: () => void, icon: React.ReactNode, label: string, isAction?: boolean}> = ({active, onClick, icon, label, isAction}) => (
     <button 
       onClick={onClick}
@@ -252,7 +286,6 @@ const NavButton: React.FC<{active: boolean, onClick: () => void, icon: React.Rea
       `}
     >
       <div className={`relative ${isAction && !active ? 'text-cyan-400' : ''}`}>
-         {isAction && active && <div className="absolute inset-0 bg-cyan-400 blur-md opacity-40"></div>}
          {icon}
       </div>
       <span className={`hidden md:block font-medium ${active ? 'text-white' : ''}`}>{label}</span>

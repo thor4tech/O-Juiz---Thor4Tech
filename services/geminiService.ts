@@ -2,93 +2,103 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { MeetingAnalysis } from "../types";
 
-// --- ESTRATÉGIA DE CUSTO E INTELIGÊNCIA ---
-// Flash: Para transcrição (rápido, barato, janela de contexto grande)
-// Pro: Para raciocínio complexo e geração do JSON
+// --- STRATEGY: HYBRID INTELLIGENCE ---
 const MODEL_TRANSCRIPTION = "gemini-1.5-flash"; 
 const MODEL_INTELLIGENCE = "gemini-1.5-pro";
 
 const getApiKey = () => {
-  // Tenta ler variaveis publicas ou privadas (conforme print)
-  const key = process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  // 1. Try LocalStorage Override
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem('THOR_OVERRIDE_GEMINI_API_KEY');
+    if (local) return local;
+  }
+
+  // 2. Try Env Vars
+  const key = process.env.NEXT_PUBLIC_GEMINI_API_KEY || 
+              process.env.GEMINI_API_KEY || 
+              process.env.REACT_APP_GEMINI_API_KEY;
+  
   if (!key) {
-    throw new Error("Chave de API do Gemini não configurada no Vercel.");
+    console.error("❌ CRITICAL: Gemini API Key missing.");
+    throw new Error("Chave de API do Gemini não encontrada. Configure no Painel de Sistema (Modo de Resgate) ou Variáveis de Ambiente.");
   }
   return key;
 }
 
 export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
-  const apiKey = getApiKey();
-  const ai = new GoogleGenAI({ apiKey });
-
-  // Converter Blob para Base64
-  const base64Data = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(audioBlob);
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      // Remove o cabeçalho "data:audio/webm;base64,"
-      const base64 = result.split(',')[1]; 
-      resolve(base64);
-    };
-    reader.onerror = reject;
-  });
-
   try {
-    // Chamada leve para transcrição
+    const apiKey = getApiKey();
+    const ai = new GoogleGenAI({ apiKey });
+
+    // 1. Convert Blob to Base64
+    const base64Data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        // Remove "data:audio/webm;base64," header
+        const base64 = result.split(',')[1]; 
+        resolve(base64);
+      };
+      reader.onerror = reject;
+    });
+
+    console.log(`[Gemini Flash] Transcribing ${audioBlob.size} bytes...`);
+
+    // 2. Call Gemini Flash
     const response = await ai.models.generateContent({
       model: MODEL_TRANSCRIPTION,
       contents: {
         parts: [
           { inlineData: { mimeType: audioBlob.type || 'audio/webm', data: base64Data } },
-          { text: "Transcreva este áudio literalmente. Apenas o texto, sem formatação markdown." }
+          { text: "Transcreva este áudio literalmente. Apenas o texto puro, sem formatação, sem timestamps." }
         ]
       }
     });
 
     const text = response.text;
     if (!text) throw new Error("A transcrição retornou vazia.");
+    
     return text;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro na Transcrição (Flash):", error);
-    throw new Error("Falha ao transcrever o áudio. Verifique a chave API ou o formato do arquivo.");
+    throw new Error(`Falha na Transcrição: ${error.message || 'Erro desconhecido'}`);
   }
 };
 
 export const generateActionPlan = async (transcription: string): Promise<MeetingAnalysis> => {
-  const apiKey = getApiKey();
-  const ai = new GoogleGenAI({ apiKey });
-
-  const PROMPT_BRAIN = `
-    Você é o Thor4Tech Brain (O Juiz). Analise esta transcrição de reunião.
-    Gere uma análise JSON estrita.
-    
-    Schema:
-    {
-      "title_sugestion": "Título curto",
-      "summary": "Resumo executivo",
-      "priority": "Alta" | "Média" | "Baixa" | "Urgente",
-      "sentiment": "Positivo" | "Neutro" | "Negativo",
-      "participants_detected": ["Nomes"],
-      "main_topics": ["Tópicos"],
-      "action_plan": [{"task": "Ação", "owner": "Nome", "deadline": "Prazo"}]
-    }
-  `;
-
   try {
-    // Chamada pesada para inteligência
+    const apiKey = getApiKey();
+    const ai = new GoogleGenAI({ apiKey });
+
+    const PROMPT_BRAIN = `
+      Você é o Thor4Tech Brain. Analise a transcrição abaixo.
+      Retorne APENAS um JSON válido seguindo este schema estrito:
+      
+      {
+        "title_sugestion": "Título curto e profissional",
+        "summary": "Resumo executivo (max 3 linhas)",
+        "priority": "Alta" | "Média" | "Baixa" | "Urgente",
+        "sentiment": "Positivo" | "Neutro" | "Negativo",
+        "participants_detected": ["Lista de nomes"],
+        "main_topics": ["Tópico 1", "Tópico 2"],
+        "action_plan": [{"task": "Ação", "owner": "Responsável", "deadline": "Prazo"}]
+      }
+    `;
+
+    console.log(`[Gemini Pro] Analyzing ${transcription.length} characters...`);
+
     const response = await ai.models.generateContent({
       model: MODEL_INTELLIGENCE,
       contents: {
         parts: [
-          { text: `TRANSCRIPTION:\n${transcription}` },
+          { text: `CONTEXTO (Transcrição):\n${transcription}` },
           { text: PROMPT_BRAIN }
         ]
       },
       config: {
         responseMimeType: "application/json",
-        // Schema tipado para garantir o JSON correto
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -109,7 +119,7 @@ export const generateActionPlan = async (transcription: string): Promise<Meeting
                 }
               }
             },
-            full_transcription: { type: Type.STRING }
+            full_transcription: { type: Type.STRING } // Helper field
           }
         }
       }
@@ -119,13 +129,12 @@ export const generateActionPlan = async (transcription: string): Promise<Meeting
     if (!text) throw new Error("A análise retornou vazia.");
     
     const json = JSON.parse(text) as MeetingAnalysis;
-    // Injeta a transcrição original no objeto final para salvar tudo junto
-    json.full_transcription = transcription;
+    json.full_transcription = transcription; 
     
     return json;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro na Análise (Pro):", error);
-    throw new Error("Falha ao gerar inteligência. O modelo pode estar sobrecarregado.");
+    throw new Error(`Falha na Inteligência: ${error.message}`);
   }
 };

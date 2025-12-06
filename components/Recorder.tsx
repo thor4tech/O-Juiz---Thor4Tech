@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AudioVisualizer } from './Visualizer';
-import { Mic, Square, Save, Loader2, Pause, Play, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Mic, Square, Save, Loader2, Pause, Play, RefreshCw } from 'lucide-react';
 
 interface RecorderProps {
   onProcess: (blob: Blob, duration: number) => Promise<void>;
@@ -19,7 +19,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
 
-  // Proteção contra fechamento acidental da aba
+  // UX: Prevent accidental tab close
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isRecording || isProcessing) {
@@ -48,13 +48,12 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         setAudioBlob(blob);
         
-        // Limpeza
-        if (audioStream) {
-            audioStream.getTracks().forEach(track => track.stop());
-        }
+        // Cleanup stream tracks
+        audioStream.getTracks().forEach(track => track.stop());
         setStream(null);
         setIsRecording(false);
         setIsPaused(false);
+        stopTimer();
       };
 
       mediaRecorder.start();
@@ -71,12 +70,12 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
     if (!mediaRecorderRef.current) return;
 
     if (isPaused) {
-      // Retomar
+      // RESUME
       mediaRecorderRef.current.resume();
       setIsPaused(false);
       startTimer();
     } else {
-      // Pausar
+      // PAUSE
       mediaRecorderRef.current.pause();
       setIsPaused(true);
       stopTimer();
@@ -86,7 +85,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      stopTimer();
+      // Timer stop is handled in onstop
     }
   };
 
@@ -122,6 +121,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
     setStream(null);
     setIsPaused(false);
     setIsRecording(false);
+    chunksRef.current = [];
   };
 
   return (
@@ -133,7 +133,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
         <p className="text-slate-400 text-sm tracking-wide">
           {isRecording 
             ? (isPaused ? "Sessão Pausada" : "Capturando Áudio...") 
-            : "Pronto para iniciar a missão"}
+            : (audioBlob ? "Áudio Capturado" : "Pronto para iniciar a missão")}
         </p>
       </div>
 
@@ -142,7 +142,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
         {isRecording && !isPaused ? (
           <AudioVisualizer stream={stream} isRecording={isRecording} />
         ) : (
-          <div className={`w-full h-full rounded-xl flex items-center justify-center border transition-all ${audioBlob ? 'bg-cyan-900/10 border-cyan-500/30' : 'bg-slate-900/50 border-white/5'}`}>
+          <div className={`w-full h-full rounded-xl flex items-center justify-center border transition-all duration-300 ${audioBlob ? 'bg-cyan-900/10 border-cyan-500/30' : 'bg-slate-900/50 border-white/5'}`}>
              {audioBlob ? 
                 <div className="flex flex-col items-center gap-2 animate-fade-in">
                     <Save size={32} className="text-cyan-400"/> 
@@ -170,7 +170,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
 
       {/* Controls */}
       <div className="flex gap-6 items-center">
-        {!isRecording && !audioBlob && (
+        {!isRecording && !audioBlob && !isProcessing && (
           <button 
             onClick={startRecording}
             className="group relative flex items-center justify-center w-20 h-20 bg-red-600 hover:bg-red-500 rounded-full transition-all shadow-lg shadow-red-600/20 hover:scale-110"
