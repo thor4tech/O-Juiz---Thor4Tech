@@ -48,8 +48,8 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
       }, 1000);
 
     } catch (err) {
-      console.error("Error accessing microphone:", err);
-      alert("Microphone access denied or not available.");
+      console.error("Erro ao acessar microfone:", err);
+      alert("Acesso ao microfone negado ou indisponível.");
     }
   };
 
@@ -82,9 +82,9 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
     <div className="flex flex-col items-center justify-center w-full max-w-2xl mx-auto p-8 glass-panel rounded-2xl neon-border min-h-[400px]">
       <div className="mb-8 text-center">
         <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600 mb-2">
-          Meeting Recorder
+          Gravador de Reunião
         </h2>
-        <p className="text-slate-400">Capture audio for AI Analysis</p>
+        <p className="text-slate-400">Capture áudio para análise da IA (O Juiz)</p>
       </div>
 
       <div className="w-full mb-8">
@@ -92,7 +92,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
           <AudioVisualizer stream={stream} isRecording={isRecording} />
         ) : (
           <div className="h-24 w-full flex items-center justify-center border border-white/10 rounded-lg bg-slate-900/50">
-             {audioBlob ? <span className="text-cyan-400 font-mono">Audio Captured Ready to Process</span> : <span className="text-slate-600">Waiting for input...</span>}
+             {audioBlob ? <span className="text-cyan-400 font-mono">Áudio capturado. Pronto para processar.</span> : <span className="text-slate-600">Aguardando entrada...</span>}
           </div>
         )}
       </div>
@@ -108,7 +108,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
             className="flex items-center gap-2 px-8 py-4 bg-red-500 hover:bg-red-600 text-white rounded-full transition-all shadow-lg shadow-red-500/20"
           >
             <Mic size={24} />
-            <span className="font-semibold">Start Recording</span>
+            <span className="font-semibold">Gravar</span>
           </button>
         )}
 
@@ -118,7 +118,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
             className="flex items-center gap-2 px-8 py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-full transition-all"
           >
             <Square size={24} fill="currentColor" />
-            <span className="font-semibold">Stop</span>
+            <span className="font-semibold">Parar</span>
           </button>
         )}
 
@@ -128,14 +128,14 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
                 onClick={reset}
                 className="px-6 py-4 text-slate-400 hover:text-white transition-colors"
             >
-                Discard
+                Descartar
             </button>
             <button 
                 onClick={handleProcess}
                 className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full transition-all shadow-lg shadow-cyan-500/20"
             >
                 <Save size={24} />
-                <span className="font-semibold">Process with Brain</span>
+                <span className="font-semibold">Processar (O Juiz)</span>
             </button>
           </>
         )}
@@ -143,7 +143,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
         {isProcessing && (
            <div className="flex items-center gap-3 px-8 py-4 bg-slate-800 text-cyan-400 rounded-full">
              <Loader2 className="animate-spin" />
-             <span>Transcribing & Analyzing...</span>
+             <span>Transcrevendo & Analisando...</span>
            </div>
         )}
       </div>
@@ -151,7 +151,7 @@ export const Recorder: React.FC<RecorderProps> = ({ onProcess, isProcessing }) =
       {duration > 3600 && (
          <div className="mt-4 flex items-center gap-2 text-yellow-500">
             <AlertCircle size={16} />
-            <span className="text-sm">Meeting exceeded 60 minutes. Analysis might be summarized.</span>
+            <span className="text-sm">Reunião excedeu 60 minutos. A análise pode ser resumida.</span>
          </div>
       )}
     </div>

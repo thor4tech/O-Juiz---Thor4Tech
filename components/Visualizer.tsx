@@ -7,27 +7,28 @@ interface VisualizerProps {
 
 export const AudioVisualizer: React.FC<VisualizerProps> = ({ stream, isRecording }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>();
-  const audioContextRef = useRef<AudioContext>();
-  const sourceRef = useRef<MediaStreamAudioSourceNode>();
-  const analyzerRef = useRef<AnalyserNode>();
+  const animationRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const analyzerRef = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
-    if (!stream || !isRecording || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    if (!stream || !isRecording || !canvas) return;
 
-    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const audioCtx = audioContextRef.current;
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    audioContextRef.current = audioCtx;
     
-    analyzerRef.current = audioCtx.createAnalyser();
-    const analyzer = analyzerRef.current;
+    const analyzer = audioCtx.createAnalyser();
     analyzer.fftSize = 256;
+    analyzerRef.current = analyzer;
 
-    sourceRef.current = audioCtx.createMediaStreamSource(stream);
-    sourceRef.current.connect(analyzer);
+    const source = audioCtx.createMediaStreamSource(stream);
+    source.connect(analyzer);
+    sourceRef.current = source;
 
     const bufferLength = analyzer.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
-    const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
 
     const draw = () => {

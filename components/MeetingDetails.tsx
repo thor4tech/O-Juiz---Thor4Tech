@@ -17,7 +17,7 @@ export const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onBack 
         onClick={onBack}
         className="flex items-center gap-2 text-slate-400 hover:text-brand-accent mb-6 transition-colors"
       >
-        <ArrowLeft size={20} /> Back to Dashboard
+        <ArrowLeft size={20} /> Voltar ao Painel
       </button>
 
       <div className="glass-panel p-8 rounded-2xl mb-8">
@@ -25,20 +25,20 @@ export const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onBack 
           <div>
             <h1 className="text-3xl font-bold text-white mb-2">{meeting.title}</h1>
             <div className="flex gap-3 text-sm text-slate-400">
-               <span>{new Date(meeting.created_at).toLocaleString()}</span>
+               <span>{new Date(meeting.created_at).toLocaleString('pt-BR')}</span>
                <span>•</span>
-               <span>{Math.floor(meeting.duration_seconds / 60)} min {meeting.duration_seconds % 60} sec</span>
+               <span>{Math.floor(meeting.duration_seconds / 60)} min {meeting.duration_seconds % 60} seg</span>
             </div>
           </div>
           <div className="flex gap-2">
             <span className={`px-3 py-1 rounded border text-sm bg-slate-900 border-slate-700 text-slate-300`}>
-               Sentiment: {analysis_json.sentiment}
+               Sentimento: {analysis_json.sentiment}
             </span>
             <span className={`px-3 py-1 rounded border text-sm font-semibold
                ${analysis_json.priority === 'Urgente' ? 'bg-red-500/20 text-red-400 border-red-500/50' : 
                  analysis_json.priority === 'Alta' ? 'bg-orange-500/20 text-orange-400 border-orange-500/50' : 
                  'bg-cyan-500/20 text-cyan-400 border-cyan-500/50'}`}>
-               {analysis_json.priority} Priority
+               Prioridade: {analysis_json.priority}
             </span>
           </div>
         </div>
@@ -49,19 +49,19 @@ export const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onBack 
             onClick={() => setActiveTab('insights')}
             className={`px-6 py-3 font-medium transition-colors border-b-2 ${activeTab === 'insights' ? 'border-brand-accent text-brand-accent' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
           >
-            <div className="flex items-center gap-2"><Activity size={18} /> Strategic Insights</div>
+            <div className="flex items-center gap-2"><Activity size={18} /> Insights Estratégicos</div>
           </button>
           <button 
             onClick={() => setActiveTab('transcription')}
             className={`px-6 py-3 font-medium transition-colors border-b-2 ${activeTab === 'transcription' ? 'border-brand-accent text-brand-accent' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
           >
-            <div className="flex items-center gap-2"><FileText size={18} /> Full Transcription</div>
+            <div className="flex items-center gap-2"><FileText size={18} /> Transcrição Completa</div>
           </button>
           <button 
             onClick={() => setActiveTab('json')}
             className={`px-6 py-3 font-medium transition-colors border-b-2 ${activeTab === 'json' ? 'border-brand-accent text-brand-accent' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
           >
-             <div className="flex items-center gap-2"><Code size={18} /> Raw Data</div>
+             <div className="flex items-center gap-2"><Code size={18} /> Dados Brutos</div>
           </button>
         </div>
 
@@ -70,13 +70,13 @@ export const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onBack 
           {activeTab === 'insights' && (
             <div className="space-y-8">
               <section>
-                <h3 className="text-lg font-semibold text-brand-accent mb-3">Executive Summary</h3>
+                <h3 className="text-lg font-semibold text-brand-accent mb-3">Resumo Executivo</h3>
                 <p className="text-slate-300 leading-relaxed text-lg">{analysis_json.summary}</p>
               </section>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <section>
-                  <h3 className="text-lg font-semibold text-brand-accent mb-3">Action Plan</h3>
+                  <h3 className="text-lg font-semibold text-brand-accent mb-3">Plano de Ação</h3>
                   <div className="space-y-3">
                     {analysis_json.action_plan.map((item, idx) => (
                       <div key={idx} className="flex gap-3 bg-slate-900/50 p-4 rounded-lg border border-white/5">
@@ -84,8 +84,8 @@ export const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onBack 
                         <div>
                           <p className="text-slate-200 font-medium">{item.task}</p>
                           <div className="flex gap-3 text-xs text-slate-500 mt-1">
-                            <span>Owner: {item.owner}</span>
-                            <span>Due: {item.deadline}</span>
+                            <span>Resp: {item.owner}</span>
+                            <span>Prazo: {item.deadline}</span>
                           </div>
                         </div>
                       </div>
@@ -95,7 +95,7 @@ export const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onBack 
 
                 <div className="space-y-8">
                    <section>
-                    <h3 className="text-lg font-semibold text-brand-accent mb-3">Main Topics</h3>
+                    <h3 className="text-lg font-semibold text-brand-accent mb-3">Tópicos Principais</h3>
                     <div className="flex flex-wrap gap-2">
                         {analysis_json.main_topics.map((topic, i) => (
                         <span key={i} className="px-3 py-1 bg-white/5 rounded-full text-slate-300 text-sm border border-white/10">
@@ -105,7 +105,7 @@ export const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onBack 
                     </div>
                   </section>
                   <section>
-                    <h3 className="text-lg font-semibold text-brand-accent mb-3">Participants</h3>
+                    <h3 className="text-lg font-semibold text-brand-accent mb-3">Participantes</h3>
                     <div className="space-y-2">
                         {analysis_json.participants_detected.map((p, i) => (
                         <div key={i} className="flex items-center gap-2 text-slate-400">

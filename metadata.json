@@ -1,6 +1,6 @@
 {
   "name": "Thor4Tech - O Juiz",
-  "description": "A Deep Cyber AI-powered meeting intelligence platform using Gemini Flash.",
+  "description": "Plataforma de inteligência de reuniões Deep Cyber alimentada por Gemini Flash.",
   "requestFramePermissions": [
     "microphone"
   ]

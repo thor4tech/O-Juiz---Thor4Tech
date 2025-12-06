@@ -30,14 +30,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
     <div className="w-full max-w-6xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Mission Dashboard</h1>
-          <p className="text-slate-400">Overview of your strategic intelligence.</p>
+          <h1 className="text-3xl font-bold text-white mb-1">Painel de Missões</h1>
+          <p className="text-slate-400">Visão geral da sua inteligência estratégica.</p>
         </div>
         <button 
           onClick={onNewMeeting}
           className="bg-brand-accent hover:bg-brand-accentHover text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg shadow-cyan-500/20"
         >
-          + New Meeting
+          + Nova Reunião
         </button>
       </div>
 
@@ -45,7 +45,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
         <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500" size={20} />
         <input 
           type="text" 
-          placeholder="Search missions..." 
+          placeholder="Buscar missões..." 
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full bg-slate-900 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:outline-none focus:border-brand-accent transition-colors"
@@ -54,7 +54,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
 
       {filteredMeetings.length === 0 ? (
         <div className="text-center py-20 opacity-50">
-          <p className="text-xl text-slate-400">No signals detected.</p>
+          <p className="text-xl text-slate-400">Nenhum sinal detectado.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -85,7 +85,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
 
               <div className="flex items-center justify-between text-slate-500 text-xs mt-auto">
                 <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(meeting.created_at).toLocaleDateString()}</span>
+                  <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(meeting.created_at).toLocaleDateString('pt-BR')}</span>
                   <span className="flex items-center gap-1"><Clock size={12}/> {Math.floor(meeting.duration_seconds / 60)}m</span>
                 </div>
                 <ArrowRight size={16} className="text-brand-accent opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1" />

@@ -50,7 +50,7 @@ const App: React.FC = () => {
       .order('created_at', { ascending: false });
     
     if (data) setMeetings(data as Meeting[]);
-    if (error) console.error("Error fetching meetings:", error);
+    if (error) console.error("Erro ao buscar reuniões:", error);
   };
 
   const handleLogout = async () => {
@@ -69,7 +69,7 @@ const App: React.FC = () => {
       // 2. Save to Supabase
       const newMeeting: Partial<Meeting> = {
         user_id: session.user.id,
-        title: analysis.title_sugestion || "Untitled Meeting",
+        title: analysis.title_sugestion || "Reunião Sem Título",
         transcription_text: analysis.full_transcription,
         analysis_json: analysis,
         duration_seconds: duration,
@@ -90,15 +90,15 @@ const App: React.FC = () => {
       }
 
     } catch (error) {
-      console.error("Processing failed:", error);
-      alert("Analysis failed. Please try again. Check API Keys.");
+      console.error("Falha no processamento:", error);
+      alert("Análise falhou. Por favor tente novamente. Verifique sua chave API.");
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleDeleteMeeting = async (id: string) => {
-    if(!confirm("Are you sure you want to delete this mission data?")) return;
+    if(!confirm("Tem certeza que deseja apagar os dados desta missão?")) return;
     
     const { error } = await supabase.from('meetings').delete().eq('id', id);
     if (!error) {
@@ -130,7 +130,7 @@ const App: React.FC = () => {
             className={`w-full flex items-center justify-center md:justify-start gap-4 px-4 py-3 rounded-lg transition-all ${currentView === AppView.DASHBOARD ? 'bg-brand-accent/20 text-brand-accent border border-brand-accent/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'hover:bg-white/5 text-slate-400 hover:text-white'}`}
           >
             <LayoutGrid size={24} />
-            <span className="hidden md:block font-medium">Dashboard</span>
+            <span className="hidden md:block font-medium">Painel</span>
           </button>
           
           <button 
@@ -141,12 +141,12 @@ const App: React.FC = () => {
                 <div className={`absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full ${currentView === AppView.RECORDER ? 'animate-ping' : ''}`}></div>
                 <Zap size={24} />
              </div>
-             <span className="hidden md:block font-medium">New Mission</span>
+             <span className="hidden md:block font-medium">Nova Missão</span>
           </button>
 
           <button className="w-full flex items-center justify-center md:justify-start gap-4 px-4 py-3 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-all">
             <Settings size={24} />
-            <span className="hidden md:block font-medium">Settings</span>
+            <span className="hidden md:block font-medium">Configurações</span>
           </button>
         </nav>
 
@@ -156,7 +156,7 @@ const App: React.FC = () => {
             className="w-full flex items-center justify-center md:justify-start gap-4 px-4 py-3 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-all border border-transparent hover:border-red-500/20"
           >
             <LogOut size={24} />
-            <span className="hidden md:block font-medium">Disconnect</span>
+            <span className="hidden md:block font-medium">Desconectar</span>
           </button>
         </div>
       </aside>

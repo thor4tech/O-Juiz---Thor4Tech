@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Zap } from 'lucide-react';
+import { Zap, AlertCircle } from 'lucide-react';
 
 export const Auth: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // Pre-filled with requested master credentials
+  const [email, setEmail] = useState('teste@teste.com');
+  const [password, setPassword] = useState('teste'); // Note: Supabase usually requires 6 chars
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMsg('');
+    
     try {
       if (isSignUp) {
         const { error } = await supabase.auth.signUp({
@@ -18,7 +22,7 @@ export const Auth: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
           password,
         });
         if (error) throw error;
-        alert('Check your email for the login link!');
+        alert('Verifique seu e-mail para o link de login!');
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -28,7 +32,13 @@ export const Auth: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
         onLogin();
       }
     } catch (error: any) {
-      alert(error.message);
+      console.error(error);
+      let msg = error.message;
+      if (msg.includes('Invalid login credentials')) msg = 'Credenciais inválidas. Verifique e-mail ou senha.';
+      if (msg.includes('Password should be at least')) msg = 'A senha deve ter pelo menos 6 caracteres.';
+      if (msg.includes('User not found')) msg = 'Usuário não encontrado. Crie uma conta primeiro.';
+      
+      setErrorMsg(msg);
     } finally {
       setLoading(false);
     }
@@ -45,13 +55,20 @@ export const Auth: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
           <div className="p-3 bg-brand-accent/10 rounded-full mb-4 neon-border">
             <Zap size={32} className="text-brand-accent" fill="currentColor" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Thor4Tech Brain</h1>
-          <p className="text-slate-400 text-sm mt-2">Enter the Deep Cyber Intelligence Layer</p>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Thor4Tech - O Juiz</h1>
+          <p className="text-slate-400 text-sm mt-2">Acesso ao Nível de Inteligência Deep Cyber</p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
+          {errorMsg && (
+            <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded-lg text-sm flex items-center gap-2">
+              <AlertCircle size={16} />
+              {errorMsg}
+            </div>
+          )}
+          
           <div>
-            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Email</label>
+            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">E-mail</label>
             <input
               type="email"
               value={email}
@@ -61,7 +78,7 @@ export const Auth: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Password</label>
+            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Senha</label>
             <input
               type="password"
               value={password}
@@ -75,7 +92,7 @@ export const Auth: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
             disabled={loading}
             className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 rounded-lg transition-all transform hover:scale-[1.02] shadow-lg shadow-cyan-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Processing...' : (isSignUp ? 'Initialize Account' : 'Access System')}
+            {loading ? 'Processando...' : (isSignUp ? 'Inicializar Conta' : 'Acessar Sistema')}
           </button>
         </form>
 
@@ -84,7 +101,7 @@ export const Auth: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
             onClick={() => setIsSignUp(!isSignUp)}
             className="text-sm text-slate-500 hover:text-brand-accent transition-colors"
           >
-            {isSignUp ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
+            {isSignUp ? 'Já tem uma conta? Entrar' : 'Precisa de acesso? Criar conta'}
           </button>
         </div>
       </div>
