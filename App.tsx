@@ -5,8 +5,9 @@ import { analyzeMeetingAudio } from './services/geminiService';
 import { Dashboard } from './components/Dashboard';
 import { Recorder } from './components/Recorder';
 import { MeetingDetails } from './components/MeetingDetails';
+import { Settings } from './components/Settings';
 import { Meeting, AppView } from './types';
-import { Zap, LayoutGrid, Settings } from 'lucide-react';
+import { Zap, LayoutGrid, Settings as SettingsIcon } from 'lucide-react';
 
 const App: React.FC = () => {
   // Default directly to Dashboard, no Auth state needed
@@ -126,8 +127,11 @@ const App: React.FC = () => {
              <span className="hidden md:block font-medium">Nova Missão</span>
           </button>
 
-          <button className="w-full flex items-center justify-center md:justify-start gap-4 px-4 py-3 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-all">
-            <Settings size={24} />
+          <button 
+            onClick={() => setCurrentView(AppView.SETTINGS)}
+            className={`w-full flex items-center justify-center md:justify-start gap-4 px-4 py-3 rounded-lg transition-all ${currentView === AppView.SETTINGS ? 'bg-brand-accent/20 text-brand-accent border border-brand-accent/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'hover:bg-white/5 text-slate-400 hover:text-white'}`}
+          >
+            <SettingsIcon size={24} />
             <span className="hidden md:block font-medium">Configurações</span>
           </button>
         </nav>
@@ -160,6 +164,10 @@ const App: React.FC = () => {
               meeting={selectedMeeting} 
               onBack={() => setCurrentView(AppView.DASHBOARD)} 
             />
+          )}
+
+          {currentView === AppView.SETTINGS && (
+            <Settings />
           )}
         </div>
       </main>
