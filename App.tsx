@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabaseClient';
-import { analyzeMeetingAudio } from './services/geminiService';
+import { transcribeAudio, generateActionPlan } from './services/geminiService';
+import { uploadAnalysisToBlob } from './services/blobService';
 import { Dashboard } from './components/Dashboard';
 import { Recorder } from './components/Recorder';
 import { MeetingDetails } from './components/MeetingDetails';
@@ -10,17 +10,15 @@ import { Meeting, AppView } from './types';
 import { Zap, LayoutGrid, Settings as SettingsIcon } from 'lucide-react';
 
 const App: React.FC = () => {
-  // Default directly to Dashboard, no Auth state needed
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processStatus, setProcessStatus] = useState<string>('');
 
-  // Guest User ID for demo purposes
   const GUEST_ID = 'guest-user-demo';
 
   useEffect(() => {
-    // Attempt to fetch meetings for guest/demo, or just start empty
     fetchMeetings();
   }, []);
 
@@ -33,8 +31,6 @@ const App: React.FC = () => {
       
       if (data) {
         setMeetings(data as Meeting[]);
-      } else if (error) {
-        console.warn("Modo Offline/Demo: Não foi possível buscar do banco de dados.", error.message);
       }
     } catch (e) {
       console.warn("Supabase não conectado ou erro de rede. Usando estado local.");
@@ -43,55 +39,60 @@ const App: React.FC = () => {
 
   const handleProcessMeeting = async (audioBlob: Blob, duration: number) => {
     setIsProcessing(true);
+    setProcessStatus('Iniciando...');
 
     try {
-      // 1. Analyze with Gemini (Client-side service)
-      // This uses the API Key from Vercel/Environment
-      const analysis = await analyzeMeetingAudio(audioBlob);
+      // Step 1: Transcribe with Gemini 2.5 Flash
+      setProcessStatus('Transcrevendo áudio (Gemini 2.5 Flash)...');
+      const transcription = await transcribeAudio(audioBlob);
+      console.log("Transcription Complete:", transcription.substring(0, 50) + "...");
 
-      // 2. Construct Meeting Object
+      // Step 2: Analyze with Gemini 3.0 Pro
+      setProcessStatus('Gerando inteligência (Gemini 3.0 Pro)...');
+      const analysis = await generateActionPlan(transcription);
+      
+      // Step 3: Upload JSON to Vercel Blob
+      setProcessStatus('Salvando na nuvem (Vercel Blob)...');
+      const blobToken = localStorage.getItem('thor4tech_blob_token');
+      if (blobToken) {
+         await uploadAnalysisToBlob(analysis, blobToken);
+      } else {
+         console.warn("Blob Token not found. Skipping cloud upload.");
+      }
+
+      // Step 4: Construct and Save Meeting Object
       const newMeeting: Meeting = {
-        id: crypto.randomUUID(), // Generate local ID
+        id: crypto.randomUUID(),
         user_id: GUEST_ID,
         title: analysis.title_sugestion || "Reunião Processada",
-        transcription_text: analysis.full_transcription,
+        transcription_text: transcription,
         analysis_json: analysis,
         duration_seconds: duration,
         status: 'completed',
         created_at: new Date().toISOString()
       };
 
-      // 3. Try to Save to Supabase (Best Effort)
-      const { error } = await supabase
-        .from('meetings')
-        .insert([newMeeting]);
+      // Try to Save to Supabase (Best Effort)
+      const { error } = await supabase.from('meetings').insert([newMeeting]);
+      if (error) console.warn("Supabase insert failed, using local.", error);
 
-      if (error) {
-        console.warn("Salvamento no banco falhou (provavelmente permissão/RLS). Salvando localmente para visualização.", error);
-      }
-
-      // 4. Always update local state so the user sees the result immediately
       setMeetings(prev => [newMeeting, ...prev]);
       setSelectedMeeting(newMeeting);
       setCurrentView(AppView.DETAILS);
 
     } catch (error) {
       console.error("Falha no processamento:", error);
-      alert("Análise falhou. Verifique se sua API Key do Gemini está configurada corretamente.");
+      alert("Erro no processo de IA. Verifique as chaves de API nas Configurações.");
     } finally {
       setIsProcessing(false);
+      setProcessStatus('');
     }
   };
 
   const handleDeleteMeeting = async (id: string) => {
     if(!confirm("Tem certeza que deseja apagar os dados desta missão?")) return;
-    
-    // Try to delete from DB
     await supabase.from('meetings').delete().eq('id', id);
-    
-    // Update local state
     setMeetings(prev => prev.filter(m => m.id !== id));
-    
     if (selectedMeeting?.id === id) {
       setSelectedMeeting(null);
       setCurrentView(AppView.DASHBOARD);
@@ -139,10 +140,8 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 ml-20 md:ml-64 p-8 relative min-h-screen">
-        {/* Background Ambience */}
         <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none"></div>
 
-        {/* Dynamic Views */}
         <div className="relative z-10">
           {currentView === AppView.DASHBOARD && (
             <Dashboard 
@@ -155,6 +154,11 @@ const App: React.FC = () => {
 
           {currentView === AppView.RECORDER && (
             <div className="flex flex-col items-center justify-center min-h-[80vh]">
+              {isProcessing && processStatus && (
+                <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-brand-accent px-4 py-2 rounded-full text-brand-accent animate-pulse z-50">
+                  {processStatus}
+                </div>
+              )}
               <Recorder onProcess={handleProcessMeeting} isProcessing={isProcessing} />
             </div>
           )}

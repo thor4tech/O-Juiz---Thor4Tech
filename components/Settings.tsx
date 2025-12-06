@@ -1,29 +1,73 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, Shield, Smartphone, Bell, Cpu, 
   Wifi, Database, LogIn, Save, RefreshCw, 
-  CreditCard, Globe 
+  CreditCard, Globe, Key, Cloud, Lock
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const [userName, setUserName] = useState("Agente Visitante");
   const [isLinked, setIsLinked] = useState(false);
+  const [apiKey, setApiKey] = useState('');
   
+  // Admin / Blob State
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPass, setAdminPass] = useState('');
+  const [blobToken, setBlobToken] = useState('');
+
+  useEffect(() => {
+    const storedKey = localStorage.getItem('thor4tech_gemini_key');
+    if (storedKey) setApiKey(storedKey);
+
+    const storedBlob = localStorage.getItem('thor4tech_blob_token');
+    if (storedBlob) setBlobToken(storedBlob);
+
+    // Auto-login check (simple simulation)
+    const adminSession = localStorage.getItem('thor4tech_admin_session');
+    if (adminSession === 'true') {
+      setIsAdmin(true);
+      setUserName("Rafael (Admin)");
+      setIsLinked(true);
+    }
+  }, []);
+
+  const handleSaveKey = () => {
+    localStorage.setItem('thor4tech_gemini_key', apiKey);
+    alert('Chave API Gemini salva localmente!');
+  };
+
+  const handleSaveBlobToken = () => {
+    localStorage.setItem('thor4tech_blob_token', blobToken);
+    alert('Vercel Blob Token salvo!');
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminEmail === 'rafael@admin.com' && adminPass === 'admin') {
+      setIsAdmin(true);
+      setUserName("Rafael (Admin)");
+      setIsLinked(true);
+      localStorage.setItem('thor4tech_admin_session', 'true');
+      alert("Bem-vindo, Rafael. Acesso Admin concedido.");
+    } else {
+      alert("Credenciais inválidas.");
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAdmin(false);
+    setIsLinked(false);
+    setUserName("Agente Visitante");
+    localStorage.removeItem('thor4tech_admin_session');
+  }
+
   // Mock System Stats
   const systemStats = [
-    { label: "Status da API Gemini", value: "Operacional", color: "text-emerald-400", icon: Cpu },
-    { label: "Latência de Rede", value: "24ms", color: "text-cyan-400", icon: Wifi },
-    { label: "Banco de Dados (Supabase)", value: "Conectado (Modo Guest)", color: "text-yellow-400", icon: Database },
+    { label: "Gemini 2.5 Flash (Transcrição)", value: "Ativo", color: "text-emerald-400", icon: Cpu },
+    { label: "Gemini 3.0 Pro (Inteligência)", value: "Ativo", color: "text-purple-400", icon: Cpu },
+    { label: "Vercel Blob Storage", value: blobToken ? "Token Configurado" : "Não Configurado", color: blobToken ? "text-cyan-400" : "text-red-400", icon: Cloud },
   ];
-
-  const handleLinkAccount = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Simulation of linking process
-    alert("Simulação: Redirecionando para portal de autenticação corporativa...");
-    setIsLinked(true);
-    setUserName("Diretor de Operações");
-  };
 
   return (
     <div className="w-full max-w-5xl mx-auto animate-fade-in pb-12">
@@ -34,7 +78,7 @@ export const Settings: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Left Column: Profile & Login Placeholder */}
+        {/* Left Column: Profile & Login */}
         <div className="lg:col-span-1 space-y-6">
           {/* Profile Card */}
           <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group">
@@ -44,35 +88,39 @@ export const Settings: React.FC = () => {
                 <User size={40} className="text-brand-accent" />
               </div>
               <h3 className="text-xl font-bold text-white">{userName}</h3>
-              <p className="text-sm text-slate-400 mb-4">{isLinked ? "Acesso Corporativo Nível 5" : "Acesso Temporário (Guest)"}</p>
+              <p className="text-sm text-slate-400 mb-4">{isAdmin ? "Administrador do Sistema" : "Acesso Visitante"}</p>
               
-              {!isLinked ? (
+              {!isAdmin ? (
                 <div className="w-full bg-slate-900/50 p-4 rounded-lg border border-white/5 text-left">
                   <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                    <LogIn size={12} /> Vincular Conta
+                    <Lock size={12} /> Login Principal (Rafael)
                   </h4>
-                  <form onSubmit={handleLinkAccount} className="space-y-3">
+                  <form onSubmit={handleAdminLogin} className="space-y-3">
                     <input 
                       type="email" 
-                      placeholder="Email Corporativo" 
+                      placeholder="Email (rafael@admin.com)" 
+                      value={adminEmail}
+                      onChange={e => setAdminEmail(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-brand-accent focus:outline-none"
                     />
                     <input 
                       type="password" 
-                      placeholder="Chave de Acesso" 
+                      placeholder="Senha (admin)" 
+                      value={adminPass}
+                      onChange={e => setAdminPass(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-brand-accent focus:outline-none"
                     />
                     <button type="submit" className="w-full bg-brand-accent hover:bg-brand-accentHover text-white text-sm font-semibold py-2 rounded transition-colors">
-                      Conectar
+                      Acessar Painel Admin
                     </button>
                   </form>
                 </div>
               ) : (
                 <button 
-                  onClick={() => setIsLinked(false)}
+                  onClick={handleLogout}
                   className="w-full border border-red-500/30 text-red-400 hover:bg-red-500/10 py-2 rounded text-sm transition-colors"
                 >
-                  Desconectar Sessão
+                  Sair do Modo Admin
                 </button>
               )}
             </div>
@@ -99,54 +147,49 @@ export const Settings: React.FC = () => {
 
         {/* Right Column: Settings Options */}
         <div className="lg:col-span-2 space-y-6">
-          
-          {/* Interface Preferences */}
-          <section className="glass-panel p-8 rounded-2xl">
+
+           {/* API KEYS SECTION */}
+           <section className="glass-panel p-8 rounded-2xl border border-brand-accent/20">
             <div className="flex items-center gap-3 mb-6">
-              <Smartphone className="text-brand-accent" />
-              <h3 className="text-xl font-bold text-white">Preferências de Interface</h3>
+              <Key className="text-brand-accent" />
+              <h3 className="text-xl font-bold text-white">Chaves de Acesso (API)</h3>
             </div>
             
-            <div className="space-y-6">
-              <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-white/5">
-                <div>
-                  <h4 className="text-white font-medium">Modo de Alta Densidade</h4>
-                  <p className="text-sm text-slate-400">Exibir mais informações por tela em listas.</p>
-                </div>
-                <div className="w-12 h-6 bg-slate-700 rounded-full relative cursor-pointer">
-                  <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all"></div>
-                </div>
-              </div>
+            <div className="space-y-4">
+               <div>
+                  <label className="block text-sm text-slate-400 mb-1">Gemini API Key (Google AI Studio)</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="password" 
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="Cole sua chave aqui (AIza...)" 
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-brand-accent focus:outline-none"
+                    />
+                    <button onClick={handleSaveKey} className="bg-slate-700 hover:bg-slate-600 px-4 rounded text-white"><Save size={18}/></button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Necessário para Transcrição (Flash) e Análise (Pro).</p>
+               </div>
 
-              <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-white/5">
-                <div>
-                  <h4 className="text-white font-medium">Animações de Interface</h4>
-                  <p className="text-sm text-slate-400">Reduzir movimentos para economizar GPU.</p>
-                </div>
-                <div className="w-12 h-6 bg-brand-accent rounded-full relative cursor-pointer">
-                  <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full transition-all"></div>
-                </div>
-              </div>
+               {isAdmin && (
+                  <div className="pt-4 border-t border-white/10">
+                    <label className="block text-sm text-yellow-400 mb-1 flex items-center gap-2"><Cloud size={14}/> Vercel Blob Token (Read/Write)</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="password" 
+                        value={blobToken}
+                        onChange={(e) => setBlobToken(e.target.value)}
+                        placeholder="vercel_blob_rw_..." 
+                        className="flex-1 bg-slate-900 border border-yellow-500/30 rounded px-3 py-2 text-white focus:border-yellow-400 focus:outline-none"
+                      />
+                      <button onClick={handleSaveBlobToken} className="bg-yellow-600/20 text-yellow-400 border border-yellow-600/50 hover:bg-yellow-600/40 px-4 rounded"><Save size={18}/></button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">Necessário para salvar os arquivos .txt na nuvem.</p>
+                  </div>
+               )}
             </div>
           </section>
-
-          {/* Notification Settings */}
-          <section className="glass-panel p-8 rounded-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <Bell className="text-brand-accent" />
-              <h3 className="text-xl font-bold text-white">Notificações Inteligentes</h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {['Conclusão de Análise', 'Tarefas Críticas', 'Resumo Semanal', 'Alertas de Segurança'].map((item, i) => (
-                <label key={i} className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors">
-                  <input type="checkbox" defaultChecked className="w-5 h-5 rounded border-slate-600 bg-slate-900 text-brand-accent focus:ring-offset-slate-900" />
-                  <span className="text-slate-300">{item}</span>
-                </label>
-              ))}
-            </div>
-          </section>
-
+          
           {/* Data Management */}
           <section className="glass-panel p-8 rounded-2xl border border-red-500/10">
             <div className="flex items-center gap-3 mb-6">
@@ -167,11 +210,6 @@ export const Settings: React.FC = () => {
           </section>
 
         </div>
-      </div>
-
-      <div className="mt-8 text-center text-slate-600 text-xs">
-        <p>Thor4Tech Meeting Brain v1.0.4 • Build 2024.05.20</p>
-        <p>Powered by Google Gemini 1.5 Flash • Secure Enclave Active</p>
       </div>
     </div>
   );
