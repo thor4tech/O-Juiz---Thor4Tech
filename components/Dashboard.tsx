@@ -3,8 +3,9 @@ import React, { useState, useMemo } from 'react';
 import { Meeting } from '../types';
 import { 
   Calendar, Clock, ArrowRight, Trash2, Search, Zap, 
-  LayoutGrid, List, Filter, TrendingUp, CheckCircle, AlertTriangle 
+  LayoutGrid, List, Filter, TrendingUp, CheckCircle, AlertTriangle, Loader2 
 } from 'lucide-react';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface DashboardProps {
   meetings: Meeting[];
@@ -24,9 +25,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
   // Stats Calculation
   const stats = useMemo(() => {
     const totalMeetings = meetings.length;
-    const totalDurationSeconds = meetings.reduce((acc, curr) => acc + curr.duration_seconds, 0);
-    const hoursSaved = Math.max(0, (totalDurationSeconds * 2) / 60); // Estimate: AI analysis saves 2x meeting time
-    const urgentCount = meetings.filter(m => m.analysis_json.priority === 'Urgente').length;
+    const completedMeetings = meetings.filter(m => m.status === 'completed');
+    const totalDurationSeconds = completedMeetings.reduce((acc, curr) => acc + curr.duration_seconds, 0);
+    const hoursSaved = Math.max(0, (totalDurationSeconds * 2) / 60); 
+    const urgentCount = completedMeetings.filter(m => m.analysis_json?.priority === 'Urgente').length;
     
     return {
       total: totalMeetings,
@@ -38,11 +40,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
   // Filtering Logic
   const filteredMeetings = useMemo(() => {
     return meetings.filter(m => {
+      // Safe check for missing analysis_json during processing
+      const summary = m.analysis_json?.summary || '';
+      const priority = m.analysis_json?.priority || 'Baixa';
+
       const matchesSearch = 
         m.title.toLowerCase().includes(search.toLowerCase()) ||
-        m.analysis_json.summary.toLowerCase().includes(search.toLowerCase());
+        summary.toLowerCase().includes(search.toLowerCase());
       
-      const matchesPriority = priorityFilter === 'all' || m.analysis_json.priority === priorityFilter;
+      const matchesPriority = priorityFilter === 'all' || priority === priorityFilter;
 
       return matchesSearch && matchesPriority;
     });
@@ -57,16 +63,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
     }
   };
 
-  const getPriorityDot = (priority: string) => {
-     switch (priority) {
-      case 'Urgente': return 'bg-red-500';
-      case 'Alta': return 'bg-orange-500';
-      case 'Média': return 'bg-yellow-500';
-      default: return 'bg-slate-500';
-    }
-  };
-
   return (
+    <ErrorBoundary>
     <div className="w-full max-w-7xl mx-auto animate-fade-in">
       
       {/* HUD / Stats Bar */}
@@ -125,32 +123,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
                 <button 
                   onClick={() => setViewMode('grid')}
                   className={`p-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                  title="Visualização em Grade"
                 >
                   <LayoutGrid size={18} />
                 </button>
                 <button 
                    onClick={() => setViewMode('list')}
                    className={`p-2 rounded transition-colors ${viewMode === 'list' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                   title="Visualização em Lista"
                 >
                   <List size={18} />
                 </button>
-            </div>
-
-            <div className="relative group">
-                <select 
-                  value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
-                  className="appearance-none bg-slate-900 border border-white/10 rounded-lg py-2 pl-10 pr-8 text-white focus:outline-none focus:border-brand-accent text-sm cursor-pointer hover:bg-slate-800 transition-colors"
-                >
-                    <option value="all">Todas Prioridades</option>
-                    <option value="Urgente">Urgente</option>
-                    <option value="Alta">Alta</option>
-                    <option value="Média">Média</option>
-                    <option value="Baixa">Baixa</option>
-                </select>
-                <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" size={16} />
             </div>
 
             <button 
@@ -165,102 +146,72 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
 
       {filteredMeetings.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center opacity-60">
-           <div className="p-4 bg-slate-900 rounded-full mb-4 border border-white/5 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+           <div className="p-4 bg-slate-900 rounded-full mb-4 border border-white/5">
              <Zap size={48} className="text-slate-600" />
            </div>
           <p className="text-xl text-slate-300 font-medium">Nenhuma missão encontrada</p>
-          <p className="text-slate-500 mt-2 max-w-md">Ajuste os filtros ou inicie uma nova gravação para gerar inteligência.</p>
         </div>
       ) : (
-        <>
-          {viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredMeetings.map((meeting) => (
-                <div 
-                  key={meeting.id}
-                  className="group glass-panel rounded-xl p-6 hover:border-brand-accent/50 transition-all cursor-pointer relative overflow-hidden"
-                  onClick={() => onSelectMeeting(meeting)}
-                >
-                  <div className="absolute top-0 left-0 w-1 h-full bg-brand-accent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  
-                  <div className="flex justify-between items-start mb-4">
-                    <span className={`px-2 py-1 rounded text-xs border font-medium ${getPriorityColor(meeting.analysis_json.priority)}`}>
-                      {meeting.analysis_json.priority}
+        <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
+          {filteredMeetings.map((meeting) => (
+            <div 
+              key={meeting.id}
+              className={`group glass-panel rounded-xl p-6 hover:border-brand-accent/50 transition-all cursor-pointer relative overflow-hidden ${viewMode === 'list' ? 'flex items-center justify-between' : ''}`}
+              onClick={() => onSelectMeeting(meeting)}
+            >
+              <div className="absolute top-0 left-0 w-1 h-full bg-brand-accent opacity-0 group-hover:opacity-100 transition-opacity" />
+              
+              <div className={viewMode === 'list' ? "flex-1" : ""}>
+                <div className="flex justify-between items-start mb-4">
+                  {meeting.status === 'processing' ? (
+                     <span className="px-2 py-1 rounded text-xs border bg-slate-800 text-cyan-400 border-cyan-500/30 flex items-center gap-2">
+                       <Loader2 size={12} className="animate-spin" /> Processando...
+                     </span>
+                  ) : (
+                    <span className={`px-2 py-1 rounded text-xs border font-medium ${getPriorityColor(meeting.analysis_json?.priority || 'Baixa')}`}>
+                      {meeting.analysis_json?.priority || 'Baixa'}
                     </span>
+                  )}
+                  
+                  {viewMode === 'grid' && (
                     <button 
                       onClick={(e) => { e.stopPropagation(); onDeleteMeeting(meeting.id); }}
                       className="text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
                     >
                       <Trash2 size={16} />
                     </button>
-                  </div>
-
-                  <h3 className="text-xl font-bold text-white mb-2 line-clamp-1">{meeting.title}</h3>
-                  <p className="text-slate-400 text-sm line-clamp-3 mb-6 leading-relaxed">
-                    {meeting.analysis_json.summary}
-                  </p>
-
-                  <div className="flex items-center justify-between text-slate-500 text-xs mt-auto border-t border-white/5 pt-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(meeting.created_at).toLocaleDateString('pt-BR')}</span>
-                      <span className="flex items-center gap-1"><Clock size={12}/> {Math.floor(meeting.duration_seconds / 60)}m</span>
-                    </div>
-                    <ArrowRight size={16} className="text-brand-accent opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1" />
-                  </div>
+                  )}
                 </div>
-              ))}
+
+                <h3 className="text-xl font-bold text-white mb-2 line-clamp-1">{meeting.title}</h3>
+                
+                {viewMode === 'grid' && (
+                  <p className="text-slate-400 text-sm line-clamp-3 mb-6 leading-relaxed">
+                    {meeting.status === 'processing' ? 'A inteligência artificial está analisando este áudio...' : meeting.analysis_json?.summary}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-3 text-slate-500 text-xs">
+                  <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(meeting.created_at).toLocaleDateString('pt-BR')}</span>
+                  <span className="flex items-center gap-1"><Clock size={12}/> {Math.floor(meeting.duration_seconds / 60)}m</span>
+                </div>
+              </div>
+
+               {viewMode === 'list' && (
+                  <div className="flex items-center gap-4">
+                     <button 
+                        onClick={(e) => { e.stopPropagation(); onDeleteMeeting(meeting.id); }}
+                        className="p-2 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded transition-colors"
+                     >
+                        <Trash2 size={16} />
+                     </button>
+                  </div>
+               )}
             </div>
-          ) : (
-            <div className="glass-panel rounded-xl overflow-hidden">
-                <table className="w-full text-left text-sm text-slate-400">
-                    <thead className="bg-slate-900/50 text-slate-200 uppercase tracking-wider font-medium text-xs">
-                        <tr>
-                            <th className="p-4">Status</th>
-                            <th className="p-4">Título / Resumo</th>
-                            <th className="p-4">Data</th>
-                            <th className="p-4">Duração</th>
-                            <th className="p-4 text-right">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                        {filteredMeetings.map((meeting) => (
-                            <tr 
-                                key={meeting.id} 
-                                onClick={() => onSelectMeeting(meeting)}
-                                className="hover:bg-white/5 transition-colors cursor-pointer group"
-                            >
-                                <td className="p-4">
-                                    <div className="flex items-center gap-2">
-                                        <div className={`w-2 h-2 rounded-full ${getPriorityDot(meeting.analysis_json.priority)}`}></div>
-                                        <span className="text-white font-medium">{meeting.analysis_json.priority}</span>
-                                    </div>
-                                </td>
-                                <td className="p-4">
-                                    <div className="font-bold text-white text-base">{meeting.title}</div>
-                                    <div className="line-clamp-1 text-xs mt-1">{meeting.analysis_json.summary}</div>
-                                </td>
-                                <td className="p-4">
-                                    {new Date(meeting.created_at).toLocaleDateString('pt-BR')}
-                                </td>
-                                <td className="p-4">
-                                    {Math.floor(meeting.duration_seconds / 60)}m {meeting.duration_seconds % 60}s
-                                </td>
-                                <td className="p-4 text-right">
-                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); onDeleteMeeting(meeting.id); }}
-                                        className="p-2 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded transition-colors"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 };

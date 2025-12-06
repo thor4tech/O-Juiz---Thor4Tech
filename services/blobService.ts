@@ -1,23 +1,30 @@
+
 import { put } from "@vercel/blob";
 
-export const uploadAnalysisToBlob = async (data: object, token: string): Promise<string | null> => {
+export const uploadAnalysisToBlob = async (data: object): Promise<string | null> => {
+  // Leitura robusta do token
+  const token = process.env.NEXT_PUBLIC_BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
+
+  if (!token) {
+    console.warn("BLOB_READ_WRITE_TOKEN não encontrado. O upload do JSON será pulado.");
+    return null;
+  }
+
   try {
     const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `meeting-analysis-${dateStr}.txt`;
+    const filename = `thor4tech-analysis-${dateStr}.json`;
     const jsonString = JSON.stringify(data, null, 2);
 
-    // Using client-side upload with the token
     const { url } = await put(filename, jsonString, {
       access: 'public',
-      token: token, 
-      contentType: 'text/plain' // Saving as txt/json
+      token: token,
+      contentType: 'application/json'
     });
 
-    console.log("Blob Upload Success:", url);
+    console.log("✅ Backup salvo no Vercel Blob:", url);
     return url;
   } catch (error) {
-    console.error("Vercel Blob Upload Failed:", error);
-    // Non-blocking error - we return null so the app continues
+    console.error("❌ Erro ao salvar no Blob:", error);
     return null;
   }
 };

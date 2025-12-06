@@ -28,7 +28,7 @@ export interface Meeting {
   user_id: string;
   title: string;
   transcription_text?: string;
-  analysis_json: MeetingAnalysis;
+  analysis_json?: MeetingAnalysis; // Optional while processing
   duration_seconds: number;
   status: 'processing' | 'completed' | 'failed';
   created_at: string;

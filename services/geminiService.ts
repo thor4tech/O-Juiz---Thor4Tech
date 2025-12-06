@@ -1,122 +1,101 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { MeetingAnalysis } from "../types";
 
-// --- MODELS CONFIGURATION ---
-// 1. Transcription Model: Fast, cheap, capable of audio processing.
-const TRANSCRIPTION_MODEL = "gemini-2.5-flash"; 
-
-// 2. Intelligence Model: High reasoning, "Pro" tier for Action Plan generation.
-const INTELLIGENCE_MODEL = "gemini-3-pro-preview";
-
-// --- PROMPTS ---
-
-const TRANSCRIPTION_PROMPT = `
-Transcreva o áudio fornecido LITERALMENTE, palavra por palavra, em Português.
-Não resuma. Não adicione notas. Apenas retorne o texto cru do que foi falado.
-`;
-
-const ANALYSIS_PROMPT = `
-Você é o 'Thor4Tech Brain', uma IA analista de negócios sênior.
-Analise a seguinte transcrição de uma reunião de negócios.
-
-Gere uma análise estratégica estruturada.
-O output deve ser APENAS um JSON válido.
-
-Schema Obrigatório:
-{
-  "title_sugestion": "Um título curto e profissional para a reunião",
-  "summary": "Resumo executivo em 3 frases, focado em decisões e dinheiro.",
-  "priority": "Alta" | "Média" | "Baixa" | "Urgente",
-  "sentiment": "Positivo" | "Neutro" | "Negativo" | "Preocupado" | "Empolgado",
-  "participants_detected": ["Lista de nomes ou cargos inferidos"],
-  "main_topics": ["Tópico 1", "Tópico 2"],
-  "action_plan": [
-    {
-      "task": "Ação a ser realizada (Verbo no Imperativo)",
-      "owner": "Responsável sugerido (ou 'A Definir')",
-      "deadline": "Prazo mencionado ou 'Não definido'"
-    }
-  ],
-  "full_transcription": "Mantenha este campo vazio, pois já tenho a transcrição separada."
-}
-`;
+// --- ESTRATÉGIA DE CUSTO E INTELIGÊNCIA ---
+// Flash: Para transcrição (rápido, barato, janela de contexto grande)
+// Pro: Para raciocínio complexo e geração do JSON
+const MODEL_TRANSCRIPTION = "gemini-1.5-flash"; 
+const MODEL_INTELLIGENCE = "gemini-1.5-pro";
 
 const getApiKey = () => {
-  return process.env.NEXT_PUBLIC_GEMINI_API_KEY || 
-         process.env.GEMINI_API_KEY || 
-         process.env.API_KEY || 
-         localStorage.getItem('thor4tech_gemini_key');
+  // Tenta ler variaveis publicas ou privadas (conforme print)
+  const key = process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new Error("Chave de API do Gemini não configurada no Vercel.");
+  }
+  return key;
 }
 
-/**
- * Step 1: Transcribe Audio using Gemini Flash
- */
 export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
   const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API Key do Gemini não encontrada (Env ou Settings).");
-
   const ai = new GoogleGenAI({ apiKey });
 
-  // Convert Blob to Base64
+  // Converter Blob para Base64
   const base64Data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(audioBlob);
     reader.onloadend = () => {
-      const base64String = reader.result as string;
-      const base64Data = base64String.split(',')[1];
-      resolve(base64Data);
+      const result = reader.result as string;
+      // Remove o cabeçalho "data:audio/webm;base64,"
+      const base64 = result.split(',')[1]; 
+      resolve(base64);
     };
     reader.onerror = reject;
   });
 
   try {
+    // Chamada leve para transcrição
     const response = await ai.models.generateContent({
-      model: TRANSCRIPTION_MODEL,
+      model: MODEL_TRANSCRIPTION,
       contents: {
         parts: [
           { inlineData: { mimeType: audioBlob.type || 'audio/webm', data: base64Data } },
-          { text: TRANSCRIPTION_PROMPT }
+          { text: "Transcreva este áudio literalmente. Apenas o texto, sem formatação markdown." }
         ]
       }
     });
 
     const text = response.text;
-    if (!text) throw new Error("Gemini Flash não retornou transcrição.");
+    if (!text) throw new Error("A transcrição retornou vazia.");
     return text;
 
   } catch (error) {
-    console.error("Transcription Failed:", error);
-    throw error;
+    console.error("Erro na Transcrição (Flash):", error);
+    throw new Error("Falha ao transcrever o áudio. Verifique a chave API ou o formato do arquivo.");
   }
 };
 
-/**
- * Step 2: Generate Intelligence using Gemini Pro
- */
 export const generateActionPlan = async (transcription: string): Promise<MeetingAnalysis> => {
   const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API Key do Gemini não encontrada.");
-
   const ai = new GoogleGenAI({ apiKey });
 
+  const PROMPT_BRAIN = `
+    Você é o Thor4Tech Brain (O Juiz). Analise esta transcrição de reunião.
+    Gere uma análise JSON estrita.
+    
+    Schema:
+    {
+      "title_sugestion": "Título curto",
+      "summary": "Resumo executivo",
+      "priority": "Alta" | "Média" | "Baixa" | "Urgente",
+      "sentiment": "Positivo" | "Neutro" | "Negativo",
+      "participants_detected": ["Nomes"],
+      "main_topics": ["Tópicos"],
+      "action_plan": [{"task": "Ação", "owner": "Nome", "deadline": "Prazo"}]
+    }
+  `;
+
   try {
+    // Chamada pesada para inteligência
     const response = await ai.models.generateContent({
-      model: INTELLIGENCE_MODEL,
+      model: MODEL_INTELLIGENCE,
       contents: {
         parts: [
           { text: `TRANSCRIPTION:\n${transcription}` },
-          { text: ANALYSIS_PROMPT }
+          { text: PROMPT_BRAIN }
         ]
       },
       config: {
         responseMimeType: "application/json",
+        // Schema tipado para garantir o JSON correto
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             title_sugestion: { type: Type.STRING },
             summary: { type: Type.STRING },
             priority: { type: Type.STRING, enum: ["Baixa", "Média", "Alta", "Urgente"] },
-            sentiment: { type: Type.STRING, enum: ["Positivo", "Neutro", "Negativo", "Preocupado", "Empolgado"] },
+            sentiment: { type: Type.STRING, enum: ["Positivo", "Neutro", "Negativo"] },
             participants_detected: { type: Type.ARRAY, items: { type: Type.STRING } },
             main_topics: { type: Type.ARRAY, items: { type: Type.STRING } },
             action_plan: {
@@ -130,23 +109,23 @@ export const generateActionPlan = async (transcription: string): Promise<Meeting
                 }
               }
             },
-            full_transcription: { type: Type.STRING } // This might be empty from the prompt, we fill it later
+            full_transcription: { type: Type.STRING }
           }
         }
       }
     });
 
     const text = response.text;
-    if (!text) throw new Error("Gemini Pro não retornou análise.");
+    if (!text) throw new Error("A análise retornou vazia.");
     
-    const analysis = JSON.parse(text) as MeetingAnalysis;
-    // Inject the full transcription back into the object
-    analysis.full_transcription = transcription;
+    const json = JSON.parse(text) as MeetingAnalysis;
+    // Injeta a transcrição original no objeto final para salvar tudo junto
+    json.full_transcription = transcription;
     
-    return analysis;
+    return json;
 
   } catch (error) {
-    console.error("Intelligence Analysis Failed:", error);
-    throw error;
+    console.error("Erro na Análise (Pro):", error);
+    throw new Error("Falha ao gerar inteligência. O modelo pode estar sobrecarregado.");
   }
 };
