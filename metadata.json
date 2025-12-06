@@ -1,0 +1,7 @@
+{
+  "name": "Thor4Tech - O Juiz",
+  "description": "A Deep Cyber AI-powered meeting intelligence platform using Gemini Flash.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
