@@ -41,3 +41,27 @@ export const supabase = createClient(finalUrl, finalKey, {
     headers: { 'x-application-name': 'thor4tech' } 
   }
 });
+
+// Funcao de Diagnostico Detalhado
+export const checkSupabaseConnection = async (): Promise<{ success: boolean; message: string }> => {
+  if (!isUrlValid) return { success: false, message: "URL do Supabase não configurada." };
+
+  try {
+    // Tenta uma query leve para validar autenticação e existência da tabela
+    const { error } = await supabase.from('meetings').select('count', { count: 'exact', head: true });
+
+    if (error) {
+      // Detalhamento de Erros Comuns
+      if (error.code === 'PGRST301') return { success: false, message: "JWT/Key Expirada ou Inválida." };
+      if (error.code === '42P01') return { success: false, message: "Tabela 'meetings' não existe no banco." };
+      if (error.message.includes("FetchError")) return { success: false, message: "Erro de Rede (CORS ou Offline)." };
+      if (error.code === '23505') return { success: false, message: "Conflito de chave única." };
+      
+      return { success: false, message: `Erro API: ${error.message} (Código: ${error.code})` };
+    }
+
+    return { success: true, message: "Conexão Ativa e Sincronizada." };
+  } catch (e: any) {
+    return { success: false, message: `Erro Crítico: ${e.message}` };
+  }
+};

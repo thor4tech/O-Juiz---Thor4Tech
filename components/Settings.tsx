@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, Shield, Cloud, CheckCircle, XCircle, Activity, Cpu, Database, Save, AlertTriangle } from 'lucide-react';
+import { checkSupabaseConnection } from '../services/supabaseClient';
 
 export const Settings: React.FC = () => {
   const [showRescueMode, setShowRescueMode] = useState(true); // Default to true if connection is likely failing
@@ -10,6 +11,7 @@ export const Settings: React.FC = () => {
     geminiKey: '',
     blobToken: ''
   });
+  const [supabaseStatusMsg, setSupabaseStatusMsg] = useState("Verificando...");
 
   // Load existing override keys on mount
   useEffect(() => {
@@ -17,7 +19,12 @@ export const Settings: React.FC = () => {
       supabaseUrl: localStorage.getItem('THOR_OVERRIDE_SUPABASE_URL') || '',
       supabaseKey: localStorage.getItem('THOR_OVERRIDE_SUPABASE_ANON_KEY') || '',
       geminiKey: localStorage.getItem('THOR_OVERRIDE_GEMINI_API_KEY') || '',
-      blobToken: localStorage.getItem('THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN') || ''
+      blobToken: localStorage.getItem('THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN') || 'vercel_blob_rw_OuzJLMYrTsFqdyyd_ymkDBC8Zn4Hr4rZDf3VgixsyISP07h'
+    });
+
+    // Check detailed connection status
+    checkSupabaseConnection().then(result => {
+        setSupabaseStatusMsg(result.message);
     });
   }, []);
 
@@ -96,8 +103,9 @@ export const Settings: React.FC = () => {
                <StatusCard 
                   icon={<Database className="text-emerald-400" size={24} />}
                   title="Banco de Dados Supabase"
-                  desc={status.supabase ? "Sincronização Ativa" : "OFFLINE: Credenciais ausentes"}
-                  active={status.supabase}
+                  desc={status.supabase ? supabaseStatusMsg : "OFFLINE: Credenciais ausentes"}
+                  active={status.supabase && !supabaseStatusMsg.toLowerCase().includes('erro')}
+                  isError={supabaseStatusMsg.toLowerCase().includes('erro')}
                />
 
                <StatusCard 
@@ -191,7 +199,7 @@ export const Settings: React.FC = () => {
   );
 };
 
-const StatusCard: React.FC<{icon: React.ReactNode, title: string, desc: string, active: boolean}> = ({icon, title, desc, active}) => (
+const StatusCard: React.FC<{icon: React.ReactNode, title: string, desc: string, active: boolean, isError?: boolean}> = ({icon, title, desc, active, isError}) => (
     <div className={`p-5 rounded-xl flex items-center justify-between border transition-all ${active ? 'bg-slate-900/50 border-white/5' : 'bg-red-900/10 border-red-500/20'}`}>
         <div className="flex items-center gap-4">
             <div className={`p-3 rounded-lg ${active ? 'bg-slate-800' : 'bg-red-500/10'}`}>
@@ -199,7 +207,7 @@ const StatusCard: React.FC<{icon: React.ReactNode, title: string, desc: string, 
             </div>
             <div>
                 <p className={`text-sm font-bold ${active ? 'text-white' : 'text-red-200'}`}>{title}</p>
-                <p className="text-xs text-slate-500">{desc}</p>
+                <p className={`text-xs ${isError ? 'text-red-400 font-bold' : 'text-slate-500'}`}>{desc}</p>
             </div>
         </div>
         <div className="flex items-center gap-2">
