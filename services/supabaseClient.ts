@@ -2,15 +2,16 @@
 import { createClient } from '@supabase/supabase-js';
 
 // --- ROBUST KEY LOADER ---
-// Priority: 
-// 1. LocalStorage (Manual Override for immediate fix)
-// 2. Environment Variables (Vercel standard)
+// Priority 1: Manual Override (LocalStorage) - GUARANTEES connection if user pastes valid keys
+// Priority 2: Vercel Env Vars (NEXT_PUBLIC_)
 const getEffectiveKey = (key: string) => {
   if (typeof window !== 'undefined') {
+    // Check Manual Override first
     const local = localStorage.getItem(`THOR_OVERRIDE_${key}`);
-    if (local) return local;
+    if (local && local.length > 5) return local;
   }
   
+  // Check standard Vercel vars
   return process.env[key] || 
          process.env[`NEXT_PUBLIC_${key}`] || 
          process.env[`REACT_APP_${key}`] || 
@@ -20,11 +21,14 @@ const getEffectiveKey = (key: string) => {
 const supabaseUrl = getEffectiveKey('SUPABASE_URL');
 const supabaseAnonKey = getEffectiveKey('SUPABASE_ANON_KEY');
 
-// Debug log to help identify issues in console
 const isUrlValid = supabaseUrl && supabaseUrl.startsWith('http');
-console.log(`[Supabase Init] URL Valid: ${isUrlValid}, Key Present: ${!!supabaseAnonKey}`);
+if (!isUrlValid) {
+    console.warn("[Supabase] URL inválida ou não encontrada. O App usará modo OFFLINE (LocalStorage).");
+} else {
+    console.log("[Supabase] Cliente inicializado com sucesso.");
+}
 
-// Use placeholder if missing to prevent crash, but operations will fail gracefully
+// Fallback to prevent crash, requests will fail gracefully and App.tsx will handle Offline Mode
 const finalUrl = isUrlValid ? supabaseUrl : 'https://placeholder.supabase.co';
 const finalKey = supabaseAnonKey || 'placeholder';
 

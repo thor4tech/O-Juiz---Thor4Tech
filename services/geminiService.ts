@@ -2,7 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { MeetingAnalysis } from "../types";
 
-// --- STRATEGY: HYBRID INTELLIGENCE ---
+// --- STRATEGY: STABLE INTELLIGENCE ---
+// Reverted to 1.5 series to fix 404 errors. 
+// These are the current stable production models.
 const MODEL_TRANSCRIPTION = "gemini-1.5-flash"; 
 const MODEL_INTELLIGENCE = "gemini-1.5-pro";
 
@@ -13,14 +15,14 @@ const getApiKey = () => {
     if (local) return local;
   }
 
-  // 2. Try Env Vars
+  // 2. Try Env Vars (Scanning all variations)
   const key = process.env.NEXT_PUBLIC_GEMINI_API_KEY || 
               process.env.GEMINI_API_KEY || 
               process.env.REACT_APP_GEMINI_API_KEY;
   
   if (!key) {
     console.error("❌ CRITICAL: Gemini API Key missing.");
-    throw new Error("Chave de API do Gemini não encontrada. Configure no Painel de Sistema (Modo de Resgate) ou Variáveis de Ambiente.");
+    throw new Error("Chave de API do Gemini não encontrada. Configure no Painel de Sistema (Modo de Resgate).");
   }
   return key;
 }
@@ -43,14 +45,17 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
       reader.onerror = reject;
     });
 
-    console.log(`[Gemini Flash] Transcribing ${audioBlob.size} bytes...`);
+    // Clean mimeType
+    const mimeType = (audioBlob.type || 'audio/webm').split(';')[0];
+
+    console.log(`[Gemini Flash] Transcribing ${audioBlob.size} bytes using ${MODEL_TRANSCRIPTION}...`);
 
     // 2. Call Gemini Flash
     const response = await ai.models.generateContent({
       model: MODEL_TRANSCRIPTION,
       contents: {
         parts: [
-          { inlineData: { mimeType: audioBlob.type || 'audio/webm', data: base64Data } },
+          { inlineData: { mimeType: mimeType, data: base64Data } },
           { text: "Transcreva este áudio literalmente. Apenas o texto puro, sem formatação, sem timestamps." }
         ]
       }
@@ -63,7 +68,11 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
 
   } catch (error: any) {
     console.error("Erro na Transcrição (Flash):", error);
-    throw new Error(`Falha na Transcrição: ${error.message || 'Erro desconhecido'}`);
+    let msg = error.message || 'Erro desconhecido';
+    if (msg.includes('404') || msg.includes('NOT_FOUND')) {
+      msg = `Modelo de IA não encontrado (${MODEL_TRANSCRIPTION}). Verifique se a API Key tem permissão.`;
+    }
+    throw new Error(`Falha na Transcrição: ${msg}`);
   }
 };
 
@@ -87,7 +96,7 @@ export const generateActionPlan = async (transcription: string): Promise<Meeting
       }
     `;
 
-    console.log(`[Gemini Pro] Analyzing ${transcription.length} characters...`);
+    console.log(`[Gemini Pro] Analyzing using ${MODEL_INTELLIGENCE}...`);
 
     const response = await ai.models.generateContent({
       model: MODEL_INTELLIGENCE,
@@ -119,7 +128,7 @@ export const generateActionPlan = async (transcription: string): Promise<Meeting
                 }
               }
             },
-            full_transcription: { type: Type.STRING } // Helper field
+            full_transcription: { type: Type.STRING }
           }
         }
       }
@@ -135,6 +144,10 @@ export const generateActionPlan = async (transcription: string): Promise<Meeting
 
   } catch (error: any) {
     console.error("Erro na Análise (Pro):", error);
-    throw new Error(`Falha na Inteligência: ${error.message}`);
+    let msg = error.message || 'Erro desconhecido';
+    if (msg.includes('404') || msg.includes('NOT_FOUND')) {
+      msg = `Modelo (${MODEL_INTELLIGENCE}) não encontrado.`;
+    }
+    throw new Error(`Falha na Inteligência: ${msg}`);
   }
 };

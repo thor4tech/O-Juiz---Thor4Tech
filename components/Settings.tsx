@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Shield, Cloud, CheckCircle, XCircle, Activity, Cpu, Database, Save, AlertTriangle } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const [showRescueMode, setShowRescueMode] = useState(false);
+  const [showRescueMode, setShowRescueMode] = useState(true); // Default to true if connection is likely failing
   const [keys, setKeys] = useState({
     supabaseUrl: '',
     supabaseKey: '',
@@ -27,29 +27,30 @@ export const Settings: React.FC = () => {
     if (keys.geminiKey) localStorage.setItem('THOR_OVERRIDE_GEMINI_API_KEY', keys.geminiKey);
     if (keys.blobToken) localStorage.setItem('THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN', keys.blobToken);
     
-    alert('Chaves salvas! O sistema será reiniciado para aplicar as novas conexões.');
+    alert('Conexões Neurais Atualizadas. Reiniciando sistema...');
     window.location.reload();
   };
 
   const handleClearKeys = () => {
-    localStorage.removeItem('THOR_OVERRIDE_SUPABASE_URL');
-    localStorage.removeItem('THOR_OVERRIDE_SUPABASE_ANON_KEY');
-    localStorage.removeItem('THOR_OVERRIDE_GEMINI_API_KEY');
-    localStorage.removeItem('THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN');
-    window.location.reload();
+    if(confirm("Deseja apagar as chaves manuais e tentar conectar via Vercel padrão?")) {
+      localStorage.removeItem('THOR_OVERRIDE_SUPABASE_URL');
+      localStorage.removeItem('THOR_OVERRIDE_SUPABASE_ANON_KEY');
+      localStorage.removeItem('THOR_OVERRIDE_GEMINI_API_KEY');
+      localStorage.removeItem('THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN');
+      window.location.reload();
+    }
   };
 
-  // Check actual active keys (Env OR LocalStorage)
-  const getActiveKey = (key: string, overrideKey: string) => {
-    return localStorage.getItem(overrideKey) || 
-           process.env[key] || 
-           process.env[`NEXT_PUBLIC_${key}`];
+  // Helper to check active status
+  const hasKey = (key: string, overrideKey: string) => {
+    const val = localStorage.getItem(overrideKey) || process.env[key] || process.env[`NEXT_PUBLIC_${key}`];
+    return !!val && val.length > 5;
   };
 
   const status = {
-    supabase: !!getActiveKey('SUPABASE_URL', 'THOR_OVERRIDE_SUPABASE_URL') && !!getActiveKey('SUPABASE_ANON_KEY', 'THOR_OVERRIDE_SUPABASE_ANON_KEY'),
-    gemini: !!getActiveKey('GEMINI_API_KEY', 'THOR_OVERRIDE_GEMINI_API_KEY'),
-    blob: !!getActiveKey('BLOB_READ_WRITE_TOKEN', 'THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN')
+    supabase: hasKey('SUPABASE_URL', 'THOR_OVERRIDE_SUPABASE_URL'),
+    gemini: hasKey('GEMINI_API_KEY', 'THOR_OVERRIDE_GEMINI_API_KEY'),
+    blob: hasKey('BLOB_READ_WRITE_TOKEN', 'THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN')
   };
 
   return (
@@ -74,14 +75,6 @@ export const Settings: React.FC = () => {
                 <Shield size={10} /> Sistema Seguro
              </div>
           </div>
-          
-          <button 
-             onClick={() => setShowRescueMode(!showRescueMode)}
-             className="w-full py-3 rounded-lg border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 text-sm transition-colors flex items-center justify-center gap-2"
-          >
-             <AlertTriangle size={16} />
-             {showRescueMode ? 'Ocultar Configuração Manual' : 'Configuração de Emergência'}
-          </button>
         </div>
 
         {/* Diagnostics & Manual Config */}
@@ -95,44 +88,50 @@ export const Settings: React.FC = () => {
             <div className="grid grid-cols-1 gap-4">
                <StatusCard 
                   icon={<Cpu className="text-purple-400" size={24} />}
-                  title="Motor de IA (Gemini Flash + Pro)"
-                  desc={status.gemini ? "Operacional" : "OFFLINE: Chave API ausente"}
+                  title="Motor de IA (Gemini 1.5)"
+                  desc={status.gemini ? "Conectado e Operacional" : "OFFLINE: Chave API ausente"}
                   active={status.gemini}
                />
 
                <StatusCard 
                   icon={<Database className="text-emerald-400" size={24} />}
                   title="Banco de Dados Supabase"
-                  desc={status.supabase ? "Operacional" : "OFFLINE: Credenciais ausentes"}
+                  desc={status.supabase ? "Sincronização Ativa" : "OFFLINE: Credenciais ausentes"}
                   active={status.supabase}
                />
 
                <StatusCard 
                   icon={<Cloud className="text-cyan-400" size={24} />}
                   title="Vercel Blob Storage"
-                  desc={status.blob ? "Operacional" : "OFFLINE: Token ausente"}
+                  desc={status.blob ? "Backup em Nuvem Ativo" : "OFFLINE: Token ausente"}
                   active={status.blob}
                />
             </div>
           </section>
 
-          {showRescueMode && (
-            <section className="glass-panel p-8 rounded-2xl border border-yellow-500/30 bg-yellow-900/5 animate-fade-in">
-                <div className="flex items-center gap-2 mb-4 text-yellow-500">
-                    <AlertTriangle size={20} />
-                    <h3 className="font-bold">Modo de Resgate (Override Manual)</h3>
-                </div>
-                <p className="text-sm text-slate-400 mb-6">
-                    Se o Vercel não estiver injetando as variáveis corretamente, cole suas chaves aqui. Elas serão salvas no navegador localmente e terão prioridade.
-                </p>
+          <section className={`glass-panel p-8 rounded-2xl border transition-all duration-500 ${showRescueMode ? 'border-brand-accent/30 bg-slate-900/50' : 'border-white/5'}`}>
+              <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-brand-accent">
+                      <AlertTriangle size={20} />
+                      <h3 className="font-bold">Configuração de Emergência (Modo Manual)</h3>
+                  </div>
+                  <button onClick={() => setShowRescueMode(!showRescueMode)} className="text-xs text-slate-500 hover:text-white underline">
+                      {showRescueMode ? 'Minimizar' : 'Expandir'}
+                  </button>
+              </div>
 
-                <div className="space-y-4">
+              {showRescueMode && (
+                <div className="space-y-4 animate-fade-in">
+                    <p className="text-sm text-slate-400 mb-4">
+                        Cole suas chaves aqui para corrigir problemas de conexão instantaneamente.
+                    </p>
+
                     <div>
                         <label className="block text-xs font-mono text-slate-500 mb-1">SUPABASE_URL</label>
                         <input 
                             type="text" 
-                            className="w-full bg-slate-950 border border-white/10 rounded p-2 text-white text-sm font-mono focus:border-yellow-500 outline-none"
-                            placeholder="https://..."
+                            className="w-full bg-slate-950 border border-white/10 rounded p-3 text-white text-sm font-mono focus:border-brand-accent outline-none"
+                            placeholder="https://sua-url.supabase.co"
                             value={keys.supabaseUrl}
                             onChange={e => setKeys({...keys, supabaseUrl: e.target.value})}
                         />
@@ -141,7 +140,7 @@ export const Settings: React.FC = () => {
                         <label className="block text-xs font-mono text-slate-500 mb-1">SUPABASE_ANON_KEY</label>
                         <input 
                             type="password" 
-                            className="w-full bg-slate-950 border border-white/10 rounded p-2 text-white text-sm font-mono focus:border-yellow-500 outline-none"
+                            className="w-full bg-slate-950 border border-white/10 rounded p-3 text-white text-sm font-mono focus:border-brand-accent outline-none"
                             placeholder="eyJ..."
                             value={keys.supabaseKey}
                             onChange={e => setKeys({...keys, supabaseKey: e.target.value})}
@@ -151,7 +150,7 @@ export const Settings: React.FC = () => {
                         <label className="block text-xs font-mono text-slate-500 mb-1">GEMINI_API_KEY</label>
                         <input 
                             type="password" 
-                            className="w-full bg-slate-950 border border-white/10 rounded p-2 text-white text-sm font-mono focus:border-yellow-500 outline-none"
+                            className="w-full bg-slate-950 border border-white/10 rounded p-3 text-white text-sm font-mono focus:border-brand-accent outline-none"
                             placeholder="AIza..."
                             value={keys.geminiKey}
                             onChange={e => setKeys({...keys, geminiKey: e.target.value})}
@@ -161,7 +160,7 @@ export const Settings: React.FC = () => {
                         <label className="block text-xs font-mono text-slate-500 mb-1">BLOB_READ_WRITE_TOKEN</label>
                         <input 
                             type="password" 
-                            className="w-full bg-slate-950 border border-white/10 rounded p-2 text-white text-sm font-mono focus:border-yellow-500 outline-none"
+                            className="w-full bg-slate-950 border border-white/10 rounded p-3 text-white text-sm font-mono focus:border-brand-accent outline-none"
                             placeholder="vercel_blob_rw_..."
                             value={keys.blobToken}
                             onChange={e => setKeys({...keys, blobToken: e.target.value})}
@@ -171,21 +170,21 @@ export const Settings: React.FC = () => {
                     <div className="flex gap-4 pt-4">
                         <button 
                             onClick={handleSaveKeys}
-                            className="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2"
+                            className="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 shadow-lg shadow-cyan-900/20"
                         >
-                            <Save size={18} /> Salvar & Conectar Agora
+                            <Save size={18} /> Salvar & Conectar
                         </button>
                         <button 
                             onClick={handleClearKeys}
-                            className="px-4 py-3 border border-white/10 text-slate-400 hover:text-white rounded-lg"
-                            title="Limpar configurações manuais"
+                            className="px-4 py-3 border border-white/10 text-slate-400 hover:text-white rounded-lg hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 transition-all"
+                            title="Limpar configurações"
                         >
                             <XCircle size={18} />
                         </button>
                     </div>
                 </div>
-            </section>
-          )}
+              )}
+          </section>
         </div>
       </div>
     </div>
