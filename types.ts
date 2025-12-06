@@ -1,3 +1,4 @@
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -34,7 +35,6 @@ export interface Meeting {
 }
 
 export enum AppView {
-  AUTH = 'AUTH',
   DASHBOARD = 'DASHBOARD',
   RECORDER = 'RECORDER',
   DETAILS = 'DETAILS',

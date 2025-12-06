@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { Meeting } from '../types';
-import { Calendar, Clock, ArrowRight, Trash2, Search } from 'lucide-react';
+import { Calendar, Clock, ArrowRight, Trash2, Search, Zap } from 'lucide-react';
 
 interface DashboardProps {
   meetings: Meeting[];
@@ -35,9 +36,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
         </div>
         <button 
           onClick={onNewMeeting}
-          className="bg-brand-accent hover:bg-brand-accentHover text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg shadow-cyan-500/20"
+          className="bg-brand-accent hover:bg-brand-accentHover text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg shadow-cyan-500/20 flex items-center gap-2"
         >
-          + Nova Reunião
+          <Zap size={20} />
+          Nova Reunião
         </button>
       </div>
 
@@ -53,8 +55,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ meetings, onSelectMeeting,
       </div>
 
       {filteredMeetings.length === 0 ? (
-        <div className="text-center py-20 opacity-50">
-          <p className="text-xl text-slate-400">Nenhum sinal detectado.</p>
+        <div className="flex flex-col items-center justify-center py-20 text-center opacity-60">
+           <div className="p-4 bg-slate-900 rounded-full mb-4 border border-white/5">
+             <Zap size={48} className="text-slate-600" />
+           </div>
+          <p className="text-xl text-slate-300 font-medium">Nenhuma missão registrada</p>
+          <p className="text-slate-500 mt-2 max-w-md">O sistema está pronto. Inicie uma nova gravação para gerar inteligência estratégica.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

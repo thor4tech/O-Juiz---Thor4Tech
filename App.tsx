@@ -1,97 +1,82 @@
+
 import React, { useState, useEffect } from 'react';
-import { createRoot } from 'react-dom/client';
-import { supabase, getSession } from './services/supabaseClient';
+import { supabase } from './services/supabaseClient';
 import { analyzeMeetingAudio } from './services/geminiService';
-import { Auth } from './components/Auth';
 import { Dashboard } from './components/Dashboard';
 import { Recorder } from './components/Recorder';
 import { MeetingDetails } from './components/MeetingDetails';
-import { Meeting, AppView, MeetingAnalysis } from './types';
-import { Zap, LayoutGrid, Settings, LogOut } from 'lucide-react';
+import { Meeting, AppView } from './types';
+import { Zap, LayoutGrid, Settings } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<any>(null);
-  const [currentView, setCurrentView] = useState<AppView>(AppView.AUTH);
+  // Default directly to Dashboard, no Auth state needed
+  const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Guest User ID for demo purposes
+  const GUEST_ID = 'guest-user-demo';
+
   useEffect(() => {
-    // Check active session
-    getSession().then(({ session }) => {
-      if (session) {
-        setSession(session);
-        setCurrentView(AppView.DASHBOARD);
-        fetchMeetings(session.user.id);
-      } else {
-        setCurrentView(AppView.AUTH);
-      }
-    });
-
-    // Auth listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) {
-        setCurrentView(AppView.DASHBOARD);
-        fetchMeetings(session.user.id);
-      } else {
-        setCurrentView(AppView.AUTH);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    // Attempt to fetch meetings for guest/demo, or just start empty
+    fetchMeetings();
   }, []);
 
-  const fetchMeetings = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('meetings')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    
-    if (data) setMeetings(data as Meeting[]);
-    if (error) console.error("Erro ao buscar reuniões:", error);
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setCurrentView(AppView.AUTH);
+  const fetchMeetings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('meetings')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (data) {
+        setMeetings(data as Meeting[]);
+      } else if (error) {
+        console.warn("Modo Offline/Demo: Não foi possível buscar do banco de dados.", error.message);
+      }
+    } catch (e) {
+      console.warn("Supabase não conectado ou erro de rede. Usando estado local.");
+    }
   };
 
   const handleProcessMeeting = async (audioBlob: Blob, duration: number) => {
-    if (!session) return;
     setIsProcessing(true);
 
     try {
       // 1. Analyze with Gemini (Client-side service)
+      // This uses the API Key from Vercel/Environment
       const analysis = await analyzeMeetingAudio(audioBlob);
 
-      // 2. Save to Supabase
-      const newMeeting: Partial<Meeting> = {
-        user_id: session.user.id,
-        title: analysis.title_sugestion || "Reunião Sem Título",
+      // 2. Construct Meeting Object
+      const newMeeting: Meeting = {
+        id: crypto.randomUUID(), // Generate local ID
+        user_id: GUEST_ID,
+        title: analysis.title_sugestion || "Reunião Processada",
         transcription_text: analysis.full_transcription,
         analysis_json: analysis,
         duration_seconds: duration,
-        status: 'completed'
+        status: 'completed',
+        created_at: new Date().toISOString()
       };
 
-      const { data, error } = await supabase
+      // 3. Try to Save to Supabase (Best Effort)
+      const { error } = await supabase
         .from('meetings')
-        .insert([newMeeting])
-        .select()
-        .single();
+        .insert([newMeeting]);
 
-      if (error) throw error;
-      if (data) {
-        setMeetings(prev => [data as Meeting, ...prev]);
-        setSelectedMeeting(data as Meeting);
-        setCurrentView(AppView.DETAILS);
+      if (error) {
+        console.warn("Salvamento no banco falhou (provavelmente permissão/RLS). Salvando localmente para visualização.", error);
       }
+
+      // 4. Always update local state so the user sees the result immediately
+      setMeetings(prev => [newMeeting, ...prev]);
+      setSelectedMeeting(newMeeting);
+      setCurrentView(AppView.DETAILS);
 
     } catch (error) {
       console.error("Falha no processamento:", error);
-      alert("Análise falhou. Por favor tente novamente. Verifique sua chave API.");
+      alert("Análise falhou. Verifique se sua API Key do Gemini está configurada corretamente.");
     } finally {
       setIsProcessing(false);
     }
@@ -100,20 +85,17 @@ const App: React.FC = () => {
   const handleDeleteMeeting = async (id: string) => {
     if(!confirm("Tem certeza que deseja apagar os dados desta missão?")) return;
     
-    const { error } = await supabase.from('meetings').delete().eq('id', id);
-    if (!error) {
-      setMeetings(prev => prev.filter(m => m.id !== id));
-      if (selectedMeeting?.id === id) {
-        setSelectedMeeting(null);
-        setCurrentView(AppView.DASHBOARD);
-      }
+    // Try to delete from DB
+    await supabase.from('meetings').delete().eq('id', id);
+    
+    // Update local state
+    setMeetings(prev => prev.filter(m => m.id !== id));
+    
+    if (selectedMeeting?.id === id) {
+      setSelectedMeeting(null);
+      setCurrentView(AppView.DASHBOARD);
     }
   };
-
-  // Rendering logic
-  if (currentView === AppView.AUTH) {
-    return <Auth onLogin={() => setCurrentView(AppView.DASHBOARD)} />;
-  }
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-brand-accent selection:text-white">
@@ -149,16 +131,6 @@ const App: React.FC = () => {
             <span className="hidden md:block font-medium">Configurações</span>
           </button>
         </nav>
-
-        <div className="w-full px-2 md:px-4 mt-auto">
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center md:justify-start gap-4 px-4 py-3 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-all border border-transparent hover:border-red-500/20"
-          >
-            <LogOut size={24} />
-            <span className="hidden md:block font-medium">Desconectar</span>
-          </button>
-        </div>
       </aside>
 
       {/* Main Content */}
