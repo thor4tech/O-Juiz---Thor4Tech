@@ -1,153 +1,168 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { MeetingAnalysis } from "../types";
 
-// --- STRATEGY: STABLE INTELLIGENCE ---
-// Reverted to 1.5 series to fix 404 errors. 
-// These are the current stable production models.
-const MODEL_TRANSCRIPTION = "gemini-1.5-flash"; 
-const MODEL_INTELLIGENCE = "gemini-1.5-pro";
+const MODEL_NAME = "gemini-1.5-flash";
 
-const getApiKey = () => {
-  // 1. Try LocalStorage Override
-  if (typeof window !== 'undefined') {
-    const local = localStorage.getItem('THOR_OVERRIDE_GEMINI_API_KEY');
-    if (local) return local;
+// Helper para Timeout (Evita looping infinito)
+const timeoutPromise = <T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(errorMessage)), ms);
+    promise
+      .then((res) => {
+        clearTimeout(timer);
+        resolve(res);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+};
+
+const getClient = () => {
+  // Busca a chave diretamente do ambiente Vercel
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Chave API do Gemini não configurada no Vercel.");
   }
-
-  // 2. Try Env Vars (Scanning all variations)
-  const key = process.env.NEXT_PUBLIC_GEMINI_API_KEY || 
-              process.env.GEMINI_API_KEY || 
-              process.env.REACT_APP_GEMINI_API_KEY;
   
-  if (!key) {
-    console.error("❌ CRITICAL: Gemini API Key missing.");
-    throw new Error("Chave de API do Gemini não encontrada. Configure no Painel de Sistema (Modo de Resgate).");
+  if (!apiKey.startsWith("AIza")) {
+     throw new Error("Formato da Chave API Gemini inválido.");
   }
-  return key;
-}
+
+  return new GoogleGenAI({ apiKey });
+};
+
+const simplifyError = (error: any): never => {
+  console.error("[Gemini Service Error]", error);
+  
+  let msg = error.message || String(error);
+  
+  // Tradução de erros comuns para mensagens curtas
+  if (msg.includes("401") || msg.includes("API key")) msg = "Chave API Inválida.";
+  if (msg.includes("403")) msg = "Acesso Negado (Região/Conta).";
+  if (msg.includes("404")) msg = "Modelo de IA indisponível.";
+  if (msg.includes("429")) msg = "Muitas requisições (Cota excedida).";
+  if (msg.includes("500") || msg.includes("503")) msg = "Servidor do Google instável.";
+  if (msg.includes("Failed to fetch") || msg.includes("Network")) msg = "Erro de Conexão/Internet.";
+  if (msg.includes("safety")) msg = "Conteúdo bloqueado por segurança.";
+  if (msg.includes("Timeout")) msg = "A IA demorou muito para responder.";
+
+  throw new Error(msg);
+};
 
 export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
   try {
-    const apiKey = getApiKey();
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getClient();
+    
+    if (audioBlob.size < 500) throw new Error("Áudio vazio ou corrompido.");
 
-    // 1. Convert Blob to Base64
     const base64Data = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(audioBlob);
       reader.onloadend = () => {
         const result = reader.result as string;
-        // Remove "data:audio/webm;base64," header
         const base64 = result.split(',')[1]; 
+        if (!base64) reject(new Error("Falha na conversão Base64"));
         resolve(base64);
       };
-      reader.onerror = reject;
+      reader.onerror = () => reject(new Error("Erro ao ler áudio."));
     });
 
-    // Clean mimeType
-    const mimeType = (audioBlob.type || 'audio/webm').split(';')[0];
+    // MIME Type seguro
+    const mimeType = audioBlob.type.includes('wav') ? 'audio/wav' : 'audio/webm';
 
-    console.log(`[Gemini Flash] Transcribing ${audioBlob.size} bytes using ${MODEL_TRANSCRIPTION}...`);
+    console.log(`[Gemini] Iniciando transcrição (${(audioBlob.size / 1024).toFixed(0)}KB)...`);
 
-    // 2. Call Gemini Flash
-    const response = await ai.models.generateContent({
-      model: MODEL_TRANSCRIPTION,
-      contents: {
-        parts: [
-          { inlineData: { mimeType: mimeType, data: base64Data } },
-          { text: "Transcreva este áudio literalmente. Apenas o texto puro, sem formatação, sem timestamps." }
-        ]
-      }
-    });
+    // Timeout de 45 segundos para transcrição
+    const response = await timeoutPromise(
+      ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: mimeType, data: base64Data } },
+            { text: "Transcreva este áudio fielmente. Se for apenas ruído, responda '[Ruído]'." }
+          ]
+        }
+      }),
+      45000,
+      "Timeout: Transcrição demorou demais."
+    );
 
     const text = response.text;
-    if (!text) throw new Error("A transcrição retornou vazia.");
+    if (!text) throw new Error("IA retornou texto vazio.");
     
     return text;
 
   } catch (error: any) {
-    console.error("Erro na Transcrição (Flash):", error);
-    let msg = error.message || 'Erro desconhecido';
-    if (msg.includes('404') || msg.includes('NOT_FOUND')) {
-      msg = `Modelo de IA não encontrado (${MODEL_TRANSCRIPTION}). Verifique se a API Key tem permissão.`;
-    }
-    throw new Error(`Falha na Transcrição: ${msg}`);
+    simplifyError(error);
+    return "";
   }
 };
 
 export const generateActionPlan = async (transcription: string): Promise<MeetingAnalysis> => {
   try {
-    const apiKey = getApiKey();
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getClient();
+    
+    if (!transcription || transcription.length < 5) {
+        throw new Error("Texto insuficiente para análise.");
+    }
 
-    const PROMPT_BRAIN = `
-      Você é o Thor4Tech Brain. Analise a transcrição abaixo.
-      Retorne APENAS um JSON válido seguindo este schema estrito:
-      
+    const PROMPT = `
+      Analise a seguinte transcrição de reunião.
+      Retorne APENAS um JSON válido (sem markdown, sem explicações) seguindo este formato exato:
       {
-        "title_sugestion": "Título curto e profissional",
-        "summary": "Resumo executivo (max 3 linhas)",
+        "title_sugestion": "Título Resumido",
+        "summary": "Resumo executivo curto",
         "priority": "Alta" | "Média" | "Baixa" | "Urgente",
         "sentiment": "Positivo" | "Neutro" | "Negativo",
-        "participants_detected": ["Lista de nomes"],
+        "participants_detected": ["Nome1", "Nome2"],
         "main_topics": ["Tópico 1", "Tópico 2"],
         "action_plan": [{"task": "Ação", "owner": "Responsável", "deadline": "Prazo"}]
       }
     `;
 
-    console.log(`[Gemini Pro] Analyzing using ${MODEL_INTELLIGENCE}...`);
+    console.log(`[Gemini] Iniciando análise inteligente...`);
 
-    const response = await ai.models.generateContent({
-      model: MODEL_INTELLIGENCE,
-      contents: {
-        parts: [
-          { text: `CONTEXTO (Transcrição):\n${transcription}` },
-          { text: PROMPT_BRAIN }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title_sugestion: { type: Type.STRING },
-            summary: { type: Type.STRING },
-            priority: { type: Type.STRING, enum: ["Baixa", "Média", "Alta", "Urgente"] },
-            sentiment: { type: Type.STRING, enum: ["Positivo", "Neutro", "Negativo"] },
-            participants_detected: { type: Type.ARRAY, items: { type: Type.STRING } },
-            main_topics: { type: Type.ARRAY, items: { type: Type.STRING } },
-            action_plan: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  task: { type: Type.STRING },
-                  owner: { type: Type.STRING },
-                  deadline: { type: Type.STRING }
-                }
-              }
-            },
-            full_transcription: { type: Type.STRING }
-          }
+    // Timeout de 45 segundos para análise
+    const response = await timeoutPromise(
+      ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: {
+          parts: [
+            { text: `TRANSCRICAO:\n${transcription.substring(0, 20000)}` },
+            { text: PROMPT }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json"
         }
-      }
-    });
+      }),
+      45000,
+      "Timeout: Análise demorou demais."
+    );
 
     const text = response.text;
-    if (!text) throw new Error("A análise retornou vazia.");
+    if (!text) throw new Error("IA não gerou resposta JSON.");
+
+    // Limpeza garantida do JSON
+    const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
     
-    const json = JSON.parse(text) as MeetingAnalysis;
+    let json: MeetingAnalysis;
+    try {
+        json = JSON.parse(cleanJson);
+    } catch (e) {
+        throw new Error("IA retornou JSON inválido.");
+    }
+
     json.full_transcription = transcription; 
     
     return json;
 
   } catch (error: any) {
-    console.error("Erro na Análise (Pro):", error);
-    let msg = error.message || 'Erro desconhecido';
-    if (msg.includes('404') || msg.includes('NOT_FOUND')) {
-      msg = `Modelo (${MODEL_INTELLIGENCE}) não encontrado.`;
-    }
-    throw new Error(`Falha na Inteligência: ${msg}`);
+    simplifyError(error);
+    return {} as MeetingAnalysis;
   }
 };

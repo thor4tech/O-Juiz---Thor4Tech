@@ -29,6 +29,7 @@ export interface Meeting {
   title: string;
   transcription_text?: string;
   analysis_json?: MeetingAnalysis; // Optional while processing
+  audio_url?: string; // New field for audio persistence
   duration_seconds: number;
   status: 'processing' | 'completed' | 'failed';
   created_at: string;

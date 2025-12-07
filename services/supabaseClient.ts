@@ -1,67 +1,49 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// --- ROBUST KEY LOADER ---
-// Priority 1: Manual Override (LocalStorage) - GUARANTEES connection if user pastes valid keys
-// Priority 2: Vercel Env Vars (NEXT_PUBLIC_)
-const getEffectiveKey = (key: string) => {
+// CREDENCIAIS FORNECIDAS (HARDCODED PARA GARANTIA DE CONEXÃO)
+const HARDCODED_URL = "https://lezfrgyzldqbxcyktpkb.supabase.co";
+const HARDCODED_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxlemZyZ3l6bGRxYnhjeWt0cGtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ5OTYyNTIsImV4cCI6MjA4MDU3MjI1Mn0.4TlZeWvsiYInkkCncKBX_Azc2TSFDR1zi_xLHsdGi8E";
+
+// Função auxiliar para obter credenciais (Prioridade: LocalStorage -> Env Var -> Hardcoded)
+const getCredentials = () => {
+  let url = HARDCODED_URL;
+  let key = HARDCODED_KEY;
+
   if (typeof window !== 'undefined') {
-    // Check Manual Override first
-    const local = localStorage.getItem(`THOR_OVERRIDE_${key}`);
-    if (local && local.length > 5) return local;
+    const localUrl = localStorage.getItem('THOR_OVERRIDE_SUPABASE_URL');
+    const localKey = localStorage.getItem('THOR_OVERRIDE_SUPABASE_ANON_KEY');
+    if (localUrl) url = localUrl;
+    if (localKey) key = localKey;
   }
-  
-  // Check standard Vercel vars
-  return process.env[key] || 
-         process.env[`NEXT_PUBLIC_${key}`] || 
-         process.env[`REACT_APP_${key}`] || 
-         '';
-}
 
-const supabaseUrl = getEffectiveKey('SUPABASE_URL');
-const supabaseAnonKey = getEffectiveKey('SUPABASE_ANON_KEY');
-
-const isUrlValid = supabaseUrl && supabaseUrl.startsWith('http');
-if (!isUrlValid) {
-    console.warn("[Supabase] URL inválida ou não encontrada. O App usará modo OFFLINE (LocalStorage).");
-} else {
-    console.log("[Supabase] Cliente inicializado com sucesso.");
-}
-
-// Fallback to prevent crash, requests will fail gracefully and App.tsx will handle Offline Mode
-const finalUrl = isUrlValid ? supabaseUrl : 'https://placeholder.supabase.co';
-const finalKey = supabaseAnonKey || 'placeholder';
-
-export const supabase = createClient(finalUrl, finalKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-  },
-  global: {
-    headers: { 'x-application-name': 'thor4tech' } 
+  // Tenta ler do processo se disponível e não sobrescrito
+  if (url === HARDCODED_URL && typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+     url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   }
-});
+  if (key === HARDCODED_KEY && typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+     key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  }
 
-// Funcao de Diagnostico Detalhado
-export const checkSupabaseConnection = async (): Promise<{ success: boolean; message: string }> => {
-  if (!isUrlValid) return { success: false, message: "URL do Supabase não configurada." };
+  return { url, key };
+};
 
+const { url, key } = getCredentials();
+
+export const supabase = createClient(url, key);
+
+export const checkSupabaseConnection = async () => {
   try {
-    // Tenta uma query leve para validar autenticação e existência da tabela
-    const { error } = await supabase.from('meetings').select('count', { count: 'exact', head: true });
-
+    const { data, error } = await supabase.from('meetings').select('count', { count: 'exact', head: true });
+    
     if (error) {
-      // Detalhamento de Erros Comuns
-      if (error.code === 'PGRST301') return { success: false, message: "JWT/Key Expirada ou Inválida." };
-      if (error.code === '42P01') return { success: false, message: "Tabela 'meetings' não existe no banco." };
-      if (error.message.includes("FetchError")) return { success: false, message: "Erro de Rede (CORS ou Offline)." };
-      if (error.code === '23505') return { success: false, message: "Conflito de chave única." };
-      
-      return { success: false, message: `Erro API: ${error.message} (Código: ${error.code})` };
+      console.error("[Supabase Check] Erro:", error);
+      return { success: false, message: `Erro: ${error.message || JSON.stringify(error)}` };
     }
-
-    return { success: true, message: "Conexão Ativa e Sincronizada." };
-  } catch (e: any) {
-    return { success: false, message: `Erro Crítico: ${e.message}` };
+    
+    return { success: true, message: "Conectado e Operacional" };
+  } catch (err: any) {
+    console.error("[Supabase Check] Falha crítica:", err);
+    return { success: false, message: `Falha Crítica: ${err.message}` };
   }
 };

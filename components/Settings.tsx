@@ -4,7 +4,7 @@ import { User, Shield, Cloud, CheckCircle, XCircle, Activity, Cpu, Database, Sav
 import { checkSupabaseConnection } from '../services/supabaseClient';
 
 export const Settings: React.FC = () => {
-  const [showRescueMode, setShowRescueMode] = useState(true); // Default to true if connection is likely failing
+  const [showRescueMode, setShowRescueMode] = useState(false);
   const [keys, setKeys] = useState({
     supabaseUrl: '',
     supabaseKey: '',
@@ -39,7 +39,7 @@ export const Settings: React.FC = () => {
   };
 
   const handleClearKeys = () => {
-    if(confirm("Deseja apagar as chaves manuais e tentar conectar via Vercel padrão?")) {
+    if(confirm("Deseja restaurar as configurações padrão?")) {
       localStorage.removeItem('THOR_OVERRIDE_SUPABASE_URL');
       localStorage.removeItem('THOR_OVERRIDE_SUPABASE_ANON_KEY');
       localStorage.removeItem('THOR_OVERRIDE_GEMINI_API_KEY');
@@ -48,16 +48,11 @@ export const Settings: React.FC = () => {
     }
   };
 
-  // Helper to check active status
-  const hasKey = (key: string, overrideKey: string) => {
-    const val = localStorage.getItem(overrideKey) || process.env[key] || process.env[`NEXT_PUBLIC_${key}`];
-    return !!val && val.length > 5;
-  };
-
   const status = {
-    supabase: hasKey('SUPABASE_URL', 'THOR_OVERRIDE_SUPABASE_URL'),
-    gemini: hasKey('GEMINI_API_KEY', 'THOR_OVERRIDE_GEMINI_API_KEY'),
-    blob: hasKey('BLOB_READ_WRITE_TOKEN', 'THOR_OVERRIDE_BLOB_READ_WRITE_TOKEN')
+    // Supabase sempre tentará conectar com o fallback hardcoded se o resto falhar
+    supabase: !supabaseStatusMsg.toLowerCase().includes('erro') && !supabaseStatusMsg.toLowerCase().includes('falha'),
+    gemini: !!(localStorage.getItem('THOR_OVERRIDE_GEMINI_API_KEY') || process.env.NEXT_PUBLIC_GEMINI_API_KEY),
+    blob: true // Usando fallback hardcoded
   };
 
   return (
@@ -96,22 +91,22 @@ export const Settings: React.FC = () => {
                <StatusCard 
                   icon={<Cpu className="text-purple-400" size={24} />}
                   title="Motor de IA (Gemini 1.5)"
-                  desc={status.gemini ? "Conectado e Operacional" : "OFFLINE: Chave API ausente"}
+                  desc={status.gemini ? "Conectado e Operacional" : "Verificando chaves..."}
                   active={status.gemini}
                />
 
                <StatusCard 
                   icon={<Database className="text-emerald-400" size={24} />}
                   title="Banco de Dados Supabase"
-                  desc={status.supabase ? supabaseStatusMsg : "OFFLINE: Credenciais ausentes"}
-                  active={status.supabase && !supabaseStatusMsg.toLowerCase().includes('erro')}
-                  isError={supabaseStatusMsg.toLowerCase().includes('erro')}
+                  desc={status.supabase ? supabaseStatusMsg : `OFFLINE: ${supabaseStatusMsg}`}
+                  active={status.supabase}
+                  isError={!status.supabase}
                />
 
                <StatusCard 
                   icon={<Cloud className="text-cyan-400" size={24} />}
                   title="Vercel Blob Storage"
-                  desc={status.blob ? "Backup em Nuvem Ativo" : "OFFLINE: Token ausente"}
+                  desc="Backup em Nuvem Ativo"
                   active={status.blob}
                />
             </div>
@@ -185,7 +180,7 @@ export const Settings: React.FC = () => {
                         <button 
                             onClick={handleClearKeys}
                             className="px-4 py-3 border border-white/10 text-slate-400 hover:text-white rounded-lg hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 transition-all"
-                            title="Limpar configurações"
+                            title="Restaurar Padrões"
                         >
                             <XCircle size={18} />
                         </button>

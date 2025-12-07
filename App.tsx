@@ -2,14 +2,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabaseClient';
 import { transcribeAudio, generateActionPlan } from './services/geminiService';
-import { uploadAnalysisToBlob } from './services/blobService';
+import { uploadAnalysisToBlob, uploadFile } from './services/blobService';
 import { Dashboard } from './components/Dashboard';
 import { Recorder } from './components/Recorder';
 import { MeetingDetails } from './components/MeetingDetails';
 import { Settings } from './components/Settings';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Meeting, AppView } from './types';
-import { Zap, LayoutGrid, Settings as SettingsIcon, CloudOff, Cloud } from 'lucide-react';
+import { Zap, LayoutGrid, Settings as SettingsIcon, CloudOff } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'thor4tech_meetings_backup';
 
@@ -26,25 +26,18 @@ const App: React.FC = () => {
     loadMeetings();
   }, []);
 
-  // --- STORAGE LOGIC ---
   const saveToLocalStorage = (newMeetings: Meeting[]) => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newMeetings));
   };
 
   const loadMeetings = async () => {
-    // 1. Load Local Backup First (Instant UI)
     const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
-    let localMeetings: Meeting[] = [];
     if (localData) {
       try {
-        localMeetings = JSON.parse(localData);
-        setMeetings(localMeetings);
-      } catch (e) {
-        console.error("Error parsing local meetings", e);
-      }
+        setMeetings(JSON.parse(localData));
+      } catch (e) { console.error(e); }
     }
 
-    // 2. Try Supabase Sync
     try {
       const { data, error } = await supabase
         .from('meetings')
@@ -52,129 +45,147 @@ const App: React.FC = () => {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      
       if (data) {
         setMeetings(data as Meeting[]);
-        saveToLocalStorage(data as Meeting[]); // Update local backup with cloud truth
+        saveToLocalStorage(data as Meeting[]);
         setIsOffline(false);
       }
     } catch (e) {
-      console.warn("⚠️ Mode Offline Active: Could not sync with Supabase.", e);
+      console.warn("Offline Mode:", e);
       setIsOffline(true);
-      // Keep using localMeetings loaded in step 1
     }
   };
 
   const handleProcessMeeting = async (audioBlob: Blob, duration: number) => {
-    // 1. DRAFT CREATION (Immediate UI Update)
+    if (isProcessing) return; 
+    setIsProcessing(true); // INÍCIO DO PROCESSO
+    setCurrentView(AppView.DASHBOARD);
+    
+    // 1. RASCUNHO (Feedback Imediato)
     const draftId = crypto.randomUUID();
     const draftMeeting: Meeting = {
       id: draftId,
       user_id: GUEST_ID,
-      title: "Processando nova reunião...",
+      title: "Processando Gravação...",
       duration_seconds: duration,
       status: 'processing',
       created_at: new Date().toISOString(),
-      analysis_json: undefined
+      analysis_json: undefined,
+      audio_url: undefined
     };
 
-    // Optimistic Update
-    const updatedMeetings = [draftMeeting, ...meetings];
+    // Atualiza estado local imediatamente
+    let updatedMeetings = [draftMeeting, ...meetings];
     setMeetings(updatedMeetings);
-    saveToLocalStorage(updatedMeetings); // Backup immediately
-    
-    setIsProcessing(true);
-    setCurrentView(AppView.DASHBOARD);
+    saveToLocalStorage(updatedMeetings);
 
     try {
-      // 2. ATTEMPT CLOUD SAVE (Non-blocking)
-      supabase.from('meetings').insert([draftMeeting]).then(({ error }) => {
-        if (error) console.warn("Cloud save failed, relying on local storage.");
-      });
+      // 2. UPLOAD ÁUDIO
+      // Passo crítico: Salvar o áudio antes de qualquer risco de falha da IA
+      console.log("Iniciando upload do áudio...");
+      const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+      const audioUrl = await uploadFile(audioBlob, `rec-${draftId}-${dateStr}.webm`);
+      
+      if (audioUrl) {
+         draftMeeting.audio_url = audioUrl;
+         updatedMeetings = updatedMeetings.map(m => m.id === draftId ? { ...draftMeeting } : m);
+         setMeetings(updatedMeetings);
+      }
 
-      // 3. TRANSCRIPTION (Flash)
+      // 3. SALVA RASCUNHO NO BANCO
+      await supabase.from('meetings').insert([draftMeeting]);
+
+      // 4. TRANSCRIÇÃO (Gemini)
+      // Se falhar aqui, cai no catch, mas o áudio já está salvo
+      console.log("Enviando para Transcrição...");
       const transcription = await transcribeAudio(audioBlob);
       
-      // Update local state partially
       draftMeeting.transcription_text = transcription;
-      draftMeeting.title = "Analisando inteligência...";
-      
-      const meetingsWithTrans = meetings.map(m => m.id === draftId ? { ...draftMeeting } : m);
-      setMeetings(meetingsWithTrans);
-      saveToLocalStorage(meetingsWithTrans);
+      updatedMeetings = updatedMeetings.map(m => m.id === draftId ? { ...draftMeeting, title: "Gerando Inteligência..." } : m);
+      setMeetings(updatedMeetings);
 
-      // 4. INTELLIGENCE (Pro)
+      // 5. INTELIGÊNCIA (Gemini)
+      console.log("Gerando Insights...");
       const analysis = await generateActionPlan(transcription);
       
-      // 5. BLOB BACKUP
-      uploadAnalysisToBlob(analysis).catch(console.warn);
+      // 6. BACKUP JSON (Blob)
+      uploadAnalysisToBlob(analysis).catch(e => console.warn("Backup JSON falhou:", e));
 
-      // 6. FINALIZE
+      // 7. FINALIZAÇÃO (Sucesso)
       const finalMeeting: Meeting = {
         ...draftMeeting,
-        title: analysis.title_sugestion || "Reunião Finalizada",
+        title: analysis.title_sugestion || "Reunião Processada",
         status: 'completed',
         transcription_text: transcription,
-        analysis_json: analysis
+        analysis_json: analysis,
+        audio_url: audioUrl || undefined
       };
 
-      // Update State & Local Storage
-      const finalMeetings = meetings.map(m => m.id === draftId ? finalMeeting : m);
-      setMeetings(finalMeetings);
-      saveToLocalStorage(finalMeetings);
+      updatedMeetings = updatedMeetings.map(m => m.id === draftId ? finalMeeting : m);
+      setMeetings(updatedMeetings);
+      saveToLocalStorage(updatedMeetings);
 
-      // Update Supabase
-      await supabase
-        .from('meetings')
-        .update({
+      // Atualiza o registro existente no banco
+      await supabase.from('meetings').update({
             title: finalMeeting.title,
             status: 'completed',
             transcription_text: transcription,
-            analysis_json: analysis
-        })
-        .eq('id', draftId);
+            analysis_json: analysis,
+            audio_url: finalMeeting.audio_url
+        }).eq('id', draftId);
 
     } catch (error: any) {
-      console.error("PROCESSING ERROR:", error);
+      console.error("ERRO NO FLUXO DE IA:", error);
       
-      // Handle Failure Gracefully
+      const errorMsg = error.message || "Erro desconhecido";
+      
+      // Atualiza a reunião para estado de falha, mas mantém o que foi salvo (áudio/transcrição parcial)
       const failedMeeting: Meeting = {
         ...draftMeeting,
         status: 'failed',
-        title: "Erro no Processamento (Backup Salvo)",
-        transcription_text: "Erro: " + (error.message || "Falha desconhecida")
+        title: "Falha na Análise",
+        transcription_text: draftMeeting.transcription_text || `Erro: ${errorMsg}`,
+        analysis_json: { 
+            summary: `Houve um erro técnico: ${errorMsg}. O áudio foi preservado.`, 
+            priority: 'Baixa',
+            sentiment: 'Neutro',
+            participants_detected: [],
+            main_topics: ['Erro'],
+            action_plan: [],
+            title_sugestion: "Erro no Processamento",
+            full_transcription: draftMeeting.transcription_text || ""
+        },
+        audio_url: draftMeeting.audio_url 
       };
 
-      const failedMeetingsList = meetings.map(m => m.id === draftId ? failedMeeting : m);
-      setMeetings(failedMeetingsList);
-      saveToLocalStorage(failedMeetingsList);
+      updatedMeetings = updatedMeetings.map(m => m.id === draftId ? failedMeeting : m);
+      setMeetings(updatedMeetings);
+      saveToLocalStorage(updatedMeetings);
       
-      // Try to update DB status if possible
-      supabase.from('meetings').update({ status: 'failed' }).eq('id', draftId);
+      // Tenta persistir o erro no banco
+      supabase.from('meetings').update({ 
+        status: 'failed', 
+        transcription_text: failedMeeting.transcription_text 
+      }).eq('id', draftId);
 
-      alert(`Houve uma falha na IA: ${error.message}. O rascunho foi salvo localmente.`);
+      alert(`Atenção: ${errorMsg}. O áudio foi salvo.`);
     } finally {
+      // CRÍTICO: Garante que o indicador de carregamento pare
+      console.log("Finalizando processo.");
       setIsProcessing(false);
     }
   };
 
   const handleDeleteMeeting = async (id: string) => {
-    if(!confirm("Tem certeza? Esta ação é irreversível.")) return;
-    
-    // Remove locally
+    if(!confirm("Excluir esta missão permanentemente?")) return;
     const filtered = meetings.filter(m => m.id !== id);
     setMeetings(filtered);
     saveToLocalStorage(filtered);
-
     if (selectedMeeting?.id === id) {
       setSelectedMeeting(null);
       setCurrentView(AppView.DASHBOARD);
     }
-
-    // Try remove from cloud
-    supabase.from('meetings').delete().eq('id', id).then(({error}) => {
-       if(error) console.warn("Could not delete from cloud (offline?)");
-    });
+    await supabase.from('meetings').delete().eq('id', id);
   };
 
   return (
@@ -201,10 +212,11 @@ const App: React.FC = () => {
             />
             <NavButton 
                 active={currentView === AppView.RECORDER} 
-                onClick={() => setCurrentView(AppView.RECORDER)}
+                onClick={() => !isProcessing && setCurrentView(AppView.RECORDER)}
                 icon={<Zap size={22} />}
                 label="Nova Missão"
                 isAction
+                disabled={isProcessing}
             />
             <NavButton 
                 active={currentView === AppView.SETTINGS} 
@@ -220,7 +232,7 @@ const App: React.FC = () => {
                   <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full animate-pulse ${isOffline ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
                       <span className={`text-xs font-mono ${isOffline ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {isOffline ? 'OFFLINE (Local)' : 'ONLINE (Cloud)'}
+                        {isOffline ? 'OFFLINE' : 'ONLINE'}
                       </span>
                   </div>
               </div>
@@ -235,7 +247,7 @@ const App: React.FC = () => {
             {isOffline && (
               <div className="mb-6 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-center gap-2 text-yellow-200 text-sm">
                  <CloudOff size={16} />
-                 <span>Modo Offline Ativo: As gravações estão sendo salvas apenas neste dispositivo. Verifique as chaves do Supabase.</span>
+                 <span>Modo Offline: Verifique conexão com Supabase.</span>
               </div>
             )}
 
@@ -243,13 +255,15 @@ const App: React.FC = () => {
               <Dashboard 
                 meetings={meetings} 
                 onSelectMeeting={(m) => { 
-                   if (m.status === 'completed' || m.status === 'failed') {
+                   if (m.status !== 'processing') {
                       setSelectedMeeting(m); 
                       setCurrentView(AppView.DETAILS); 
+                   } else {
+                     alert("Ainda processando... aguarde a IA finalizar.");
                    }
                 }}
                 onDeleteMeeting={handleDeleteMeeting}
-                onNewMeeting={() => setCurrentView(AppView.RECORDER)}
+                onNewMeeting={() => !isProcessing && setCurrentView(AppView.RECORDER)}
               />
             )}
 
@@ -274,15 +288,17 @@ const App: React.FC = () => {
   );
 };
 
-const NavButton: React.FC<{active: boolean, onClick: () => void, icon: React.ReactNode, label: string, isAction?: boolean}> = ({active, onClick, icon, label, isAction}) => (
+const NavButton: React.FC<{active: boolean, onClick: () => void, icon: React.ReactNode, label: string, isAction?: boolean, disabled?: boolean}> = ({active, onClick, icon, label, isAction, disabled}) => (
     <button 
       onClick={onClick}
+      disabled={disabled}
       className={`
         w-full flex items-center justify-center md:justify-start gap-4 px-4 py-3 rounded-xl transition-all duration-300 group
         ${active 
             ? 'bg-brand-accent/10 text-brand-accent border border-brand-accent/20 shadow-[0_0_20px_rgba(6,182,212,0.15)]' 
             : 'hover:bg-white/5 text-slate-400 hover:text-white border border-transparent'
         }
+        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
       `}
     >
       <div className={`relative ${isAction && !active ? 'text-cyan-400' : ''}`}>
